@@ -3,10 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>STARS // OMEGA_FRAMEWORK</title>
+    <title>STARS // REFORGED</title>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
-
         :root {
             --bg-deep: #050508;
             --bg-panel: rgba(10, 15, 20, 0.95);
@@ -17,17 +15,26 @@
             --c-good: #00ff66;
             --c-text: #aaccff;
             --c-border: #1a2a3a;
-            --font: 'Share Tech Mono', monospace;
+            --font: "Share Tech Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
         }
 
-        * { box-sizing: border-box; user-select: none; scrollbar-width: thin; scrollbar-color: var(--c-cyan) var(--bg-deep); }
-        
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            scrollbar-width: thin;
+            scrollbar-color: var(--c-cyan) var(--bg-deep);
+        }
+
         body {
-            margin: 0; height: 100vh; background: #000; color: var(--c-text); font-family: var(--font);
+            margin: 0;
+            height: 100vh;
+            background: #000;
+            color: var(--c-text);
+            font-family: var(--font);
             display: grid;
-            grid-template-columns: 60px 1fr 300px;
-            grid-template-rows: 40px 1fr 40px;
-            grid-template-areas: 
+            grid-template-columns: 70px 1fr 320px;
+            grid-template-rows: 45px 1fr 45px;
+            grid-template-areas:
                 "header header header"
                 "nav    view   context"
                 "footer footer footer";
@@ -36,66 +43,229 @@
 
         /* --- FX --- */
         .crt::before {
-            content: " "; position: absolute; inset: 0; pointer-events: none; z-index: 999;
-            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), 
+            content: " ";
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            z-index: 999;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.35) 50%),
                         linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
             background-size: 100% 2px, 3px 100%;
+            mix-blend-mode: screen;
+        }
+
+        .grain {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            background-image: repeating-linear-gradient(
+                0deg,
+                rgba(255, 255, 255, 0.02),
+                rgba(255, 255, 255, 0.02) 1px,
+                rgba(0, 0, 0, 0.02) 2px,
+                rgba(0, 0, 0, 0.02) 4px
+            );
+            mix-blend-mode: screen;
+            opacity: 0.3;
+            z-index: 2;
         }
 
         /* --- LAYOUT --- */
-        header { grid-area: header; background: var(--bg-panel); border-bottom: 1px solid var(--c-cyan-dim); display:flex; align-items:center; padding: 0 20px; justify-content:space-between; z-index:10;}
-        nav { grid-area: nav; background: var(--bg-deep); border-right: 1px solid var(--c-cyan-dim); display:flex; flex-direction:column; align-items:center; padding-top:10px; z-index:10;}
-        aside { grid-area: context; background: var(--bg-panel); border-left: 1px solid var(--c-cyan-dim); padding:10px; overflow-y:auto; z-index:10;}
-        footer { grid-area: footer; background: var(--bg-panel); border-top: 1px solid var(--c-cyan-dim); display:flex; align-items:center; padding: 0 20px; z-index:10;}
-        
-        #main-view { grid-area: view; position: relative; overflow: hidden; background: #000; }
-        
+        header {
+            grid-area: header;
+            background: var(--bg-panel);
+            border-bottom: 1px solid var(--c-cyan-dim);
+            display: flex;
+            align-items: center;
+            padding: 0 20px;
+            justify-content: space-between;
+            z-index: 10;
+        }
+        nav {
+            grid-area: nav;
+            background: var(--bg-deep);
+            border-right: 1px solid var(--c-cyan-dim);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding-top: 10px;
+            z-index: 10;
+        }
+        aside {
+            grid-area: context;
+            background: var(--bg-panel);
+            border-left: 1px solid var(--c-cyan-dim);
+            padding: 12px;
+            overflow-y: auto;
+            z-index: 10;
+        }
+        footer {
+            grid-area: footer;
+            background: var(--bg-panel);
+            border-top: 1px solid var(--c-cyan-dim);
+            display: flex;
+            align-items: center;
+            padding: 0 20px;
+            z-index: 10;
+        }
+
+        #main-view {
+            grid-area: view;
+            position: relative;
+            overflow: hidden;
+            background: radial-gradient(circle at center, #02020a 0%, #000 70%);
+        }
+
         /* --- COMPONENTS --- */
         .icon-btn {
-            width: 40px; height: 40px; margin-bottom: 10px; border: 1px solid var(--c-border); 
-            color: var(--c-cyan); background: transparent; cursor: pointer; display:flex; justify-content:center; align-items:center; font-size:18px; transition:0.2s;
+            width: 42px;
+            height: 42px;
+            margin-bottom: 10px;
+            border: 1px solid var(--c-border);
+            color: var(--c-cyan);
+            background: transparent;
+            cursor: pointer;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 18px;
+            transition: 0.2s;
         }
-        .icon-btn:hover, .icon-btn.active { background: var(--c-cyan-dim); border-color: var(--c-cyan); box-shadow: 0 0 10px var(--c-cyan-dim); }
-        
-        .panel-block { margin-bottom: 15px; border-bottom: 1px solid var(--c-border); padding-bottom: 10px; }
-        h3 { margin: 0 0 5px 0; font-size: 12px; color: var(--c-cyan); text-transform: uppercase; letter-spacing: 1px; }
-        
-        .stat-row { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 3px; }
-        .val { color: #fff; }
-        .val.alert { color: var(--c-alert); }
+        .icon-btn:hover,
+        .icon-btn.active {
+            background: var(--c-cyan-dim);
+            border-color: var(--c-cyan);
+            box-shadow: 0 0 10px var(--c-cyan-dim);
+        }
+
+        .panel-block {
+            margin-bottom: 15px;
+            border-bottom: 1px solid var(--c-border);
+            padding-bottom: 10px;
+        }
+        h3 {
+            margin: 0 0 5px 0;
+            font-size: 12px;
+            color: var(--c-cyan);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            font-size: 12px;
+            margin-bottom: 3px;
+        }
+        .val {
+            color: #fff;
+        }
+        .val.alert {
+            color: var(--c-alert);
+        }
 
         /* Progress Bars */
-        .bar-wrap { width: 100%; height: 4px; background: #222; margin-bottom: 5px; }
-        .bar-fill { height: 100%; background: var(--c-cyan); width: 0%; }
-        .res-i { background: #66f; } .res-b { background: #4f4; } .res-g { background: var(--c-warn); }
+        .bar-wrap {
+            width: 100%;
+            height: 4px;
+            background: #222;
+            margin-bottom: 8px;
+        }
+        .bar-fill {
+            height: 100%;
+            background: var(--c-cyan);
+            width: 0%;
+        }
+        .res-i {
+            background: #66f;
+        }
+        .res-b {
+            background: #4f4;
+        }
+        .res-g {
+            background: var(--c-warn);
+        }
 
         /* Full Screen Overlays (Research, Design) */
         .screen-overlay {
-            position: absolute; top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(0,0,0,0.9); padding: 40px; display: none; overflow-y: auto;
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.92);
+            padding: 40px;
+            display: none;
+            overflow-y: auto;
         }
-        .screen-overlay.active { display: block; }
-        
-        .grid-layout { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 20px; }
-        .card { border: 1px solid var(--c-border); padding: 15px; background: rgba(0,20,30,0.5); }
-        .card:hover { border-color: var(--c-cyan); }
+        .screen-overlay.active {
+            display: block;
+        }
+
+        .grid-layout {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+            gap: 20px;
+        }
+        .card {
+            border: 1px solid var(--c-border);
+            padding: 15px;
+            background: rgba(0, 20, 30, 0.5);
+        }
+        .card:hover {
+            border-color: var(--c-cyan);
+            box-shadow: 0 0 12px rgba(0, 240, 255, 0.1);
+        }
 
         /* Inputs */
-        button.action { width: 100%; padding: 8px; background: var(--c-cyan-dim); border: 1px solid var(--c-cyan); color: var(--c-cyan); cursor: pointer; font-family: inherit; margin-top:5px; }
-        button.action:hover { background: var(--c-cyan); color: #000; }
+        button.action {
+            width: 100%;
+            padding: 8px;
+            background: var(--c-cyan-dim);
+            border: 1px solid var(--c-cyan);
+            color: var(--c-cyan);
+            cursor: pointer;
+            font-family: inherit;
+            margin-top: 5px;
+        }
+        button.action:hover {
+            background: var(--c-cyan);
+            color: #000;
+        }
 
-        .res-ticker { font-size: 14px; margin-right: 15px; }
-        .res-ticker span { color: var(--c-warn); }
+        select, input[type="text"], input[type="range"] {
+            background: #090b10;
+            color: #fff;
+            border: 1px solid #333;
+            padding: 4px;
+            font-family: inherit;
+        }
+
+        .res-ticker {
+            font-size: 14px;
+            margin-right: 15px;
+        }
+        .res-ticker span {
+            color: var(--c-warn);
+        }
+
+        .log-strip {
+            color: #6e7f92;
+            font-size: 12px;
+            display: flex;
+            gap: 10px;
+        }
     </style>
 </head>
 <body class="crt">
 
     <header>
-        <div style="font-size: 20px; color: var(--c-cyan); letter-spacing: 2px;">STARS <span style="font-size:10px; opacity:0.7">OMEGA</span></div>
+        <div style="font-size: 20px; color: var(--c-cyan); letter-spacing: 2px; text-shadow: 0 0 10px var(--c-cyan-dim);">STARS <span style="font-size:10px; opacity:0.7">REFORGED</span></div>
         <div style="display:flex;">
             <div class="res-ticker">Y: <span id="g-year" style="color:#fff">2400</span></div>
             <div class="res-ticker">CR: <span id="g-cred">500</span></div>
             <div class="res-ticker">MET: <span id="g-metal">20k</span></div>
+            <div class="res-ticker">R&D: <span id="g-rd">0</span></div>
         </div>
     </header>
 
@@ -110,24 +280,32 @@
 
     <div id="main-view">
         <canvas id="galaxy-canvas"></canvas>
-        
+        <div class="grain"></div>
+
         <!-- EMPIRE SCREEN -->
         <div id="screen-empire" class="screen-overlay">
             <h1 style="color:var(--c-cyan)">IMPERIAL DASHBOARD</h1>
             <div class="grid-layout">
                 <div class="card">
                     <h3>Race Traits</h3>
-                    <div class="stat-row"><span>Type:</span> <span class="val">Cyber-Aquatic</span></div>
-                    <div class="stat-row"><span>Grav Tol:</span> <span class="val">0.5g - 4.0g</span></div>
-                    <div class="stat-row"><span>Temp Tol:</span> <span class="val">-50° - 120°</span></div>
-                    <div class="stat-row"><span>Growth:</span> <span class="val" style="color:var(--c-good)">+18%</span></div>
-                    <div class="stat-row"><span>Mining:</span> <span class="val">Standard</span></div>
+                    <div class="stat-row"><span>Type:</span> <span class="val" id="race-type">Synthetic Nomads</span></div>
+                    <div class="stat-row"><span>Grav Tol:</span> <span class="val" id="race-grav">0.3g - 4.2g</span></div>
+                    <div class="stat-row"><span>Temp Tol:</span> <span class="val" id="race-temp">-80° - 140°</span></div>
+                    <div class="stat-row"><span>Growth:</span> <span class="val" id="race-growth">+17%</span></div>
+                    <div class="stat-row"><span>Mining:</span> <span class="val" id="race-mining">Adaptive</span></div>
                 </div>
                 <div class="card">
                     <h3>Economy</h3>
                     <div class="stat-row"><span>Total Pop:</span> <span class="val" id="emp-pop">0</span></div>
                     <div class="stat-row"><span>Tax Income:</span> <span class="val" id="emp-tax">0</span></div>
                     <div class="stat-row"><span>Maint. Cost:</span> <span class="val alert" id="emp-maint">0</span></div>
+                    <div class="stat-row"><span>Industrial Output:</span> <span class="val" id="emp-ind">0</span></div>
+                </div>
+                <div class="card">
+                    <h3>Known Sectors</h3>
+                    <div class="stat-row"><span>Visible Stars:</span> <span class="val" id="emp-vis">0</span></div>
+                    <div class="stat-row"><span>Known Stars:</span> <span class="val" id="emp-known">0</span></div>
+                    <div class="stat-row"><span>Active Fleets:</span> <span class="val" id="emp-fleets">0</span></div>
                 </div>
             </div>
         </div>
@@ -135,8 +313,18 @@
         <!-- RESEARCH SCREEN -->
         <div id="screen-research" class="screen-overlay">
             <h1 style="color:var(--c-cyan)">R&D LABS</h1>
-            <div style="margin-bottom:20px;">Current Budget: <span class="val">15%</span> of GDP</div>
+            <div class="card" style="margin-bottom:20px;">
+                <div class="stat-row"><span>Current Focus:</span> <span class="val" id="tech-focus">Energy</span></div>
+                <div class="stat-row"><span>Research Budget:</span> <span class="val"><span id="rd-budget">15</span>%</span></div>
+                <input id="rd-slider" type="range" min="5" max="30" value="15" style="width:100%;">
+            </div>
             <div class="grid-layout" id="tech-grid"></div>
+        </div>
+
+        <!-- FLEET SCREEN -->
+        <div id="screen-fleets" class="screen-overlay">
+            <h1 style="color:var(--c-cyan)">FLEET MANIFEST</h1>
+            <div class="grid-layout" id="fleet-grid"></div>
         </div>
 
         <!-- COMMS SCREEN -->
@@ -149,23 +337,23 @@
                 </div>
                 <div class="card">
                     <h3>Message Content</h3>
-                    <div id="msg-body" style="font-size:14px; color:#fff;">Select a message...</div>
+                    <div id="msg-body" style="font-size:14px; color:#fff; white-space:pre-line;">Select a message...</div>
                 </div>
             </div>
         </div>
-        
+
         <!-- DESIGN SCREEN -->
         <div id="screen-design" class="screen-overlay">
             <h1 style="color:var(--c-cyan)">NAVAL ARCHITECT</h1>
             <div class="grid-layout">
                 <div class="card">
                     <h3>Hull & Components</h3>
-                    <div class="stat-row">Hull: <select id="des-hull" style="background:#000; color:#fff"></select></div>
-                    <div class="stat-row">Engine: <select id="des-eng" style="background:#000; color:#fff"></select></div>
-                    <div class="stat-row">Weapon: <select id="des-wep" style="background:#000; color:#fff"></select></div>
-                    <div class="stat-row">Shield: <select id="des-shi" style="background:#000; color:#fff"></select></div>
-                    <div class="stat-row">Special: <select id="des-spec" style="background:#000; color:#fff"></select></div>
-                    <input type="text" id="des-name" value="New Ship Class" style="width:100%; margin-top:10px; background:#111; color:#fff; border:1px solid #444;">
+                    <div class="stat-row">Hull: <select id="des-hull"></select></div>
+                    <div class="stat-row">Engine: <select id="des-eng"></select></div>
+                    <div class="stat-row">Weapon: <select id="des-wep"></select></div>
+                    <div class="stat-row">Shield: <select id="des-shi"></select></div>
+                    <div class="stat-row">Special: <select id="des-spec"></select></div>
+                    <input type="text" id="des-name" value="New Ship Class" style="width:100%; margin-top:10px;">
                     <button class="action" onclick="Game.saveDesign()">SAVE BLUEPRINT</button>
                 </div>
                 <div class="card">
@@ -173,7 +361,13 @@
                     <div class="stat-row"><span>Cost:</span> <span class="val" id="sim-cost">0</span></div>
                     <div class="stat-row"><span>Mass:</span> <span class="val" id="sim-mass">0</span>kt</div>
                     <div class="stat-row"><span>Fuel Cap:</span> <span class="val" id="sim-fuel">0</span>mg</div>
+                    <div class="stat-row"><span>Range:</span> <span class="val" id="sim-range">0</span>ly</div>
+                    <div class="stat-row"><span>Speed:</span> <span class="val" id="sim-speed">0</span></div>
                     <div class="stat-row"><span>Battle Value:</span> <span class="val" id="sim-bv">0</span></div>
+                </div>
+                <div class="card">
+                    <h3>Saved Blueprints</h3>
+                    <div id="design-list" style="font-size:12px; max-height:260px; overflow:auto;"></div>
                 </div>
             </div>
         </div>
@@ -186,27 +380,39 @@
     </aside>
 
     <footer>
-        <button id="turn-btn" class="action" style="width:auto; padding:0 30px; height:30px;" onclick="Game.turn()">EXECUTE TURN</button>
-        <div id="footer-log" style="margin-left:20px; font-size:12px; color:#666;">READY.</div>
+        <button id="turn-btn" class="action" style="width:auto; padding:0 30px; height:32px;" onclick="Game.turn()">EXECUTE TURN</button>
+        <div class="log-strip">
+            <div id="footer-log">READY.</div>
+            <div>|</div>
+            <div>Space: End Turn</div>
+            <div>Right Click: Move</div>
+        </div>
     </footer>
 
 <script>
-    /** STARS // OMEGA FRAMEWORK **/
-    
+    /** STARS // REFORGED */
+
     // --- DATABASE ---
     const DB = {
-        techs: ['Energy', 'Weapons', 'Propulsion', 'Construction', 'Electronics', 'Biotech'],
+        techs: [
+            { id: 0, name: 'Energy', desc: 'Power generation, shields, and scanners.', baseCost: 400 },
+            { id: 1, name: 'Weapons', desc: 'Offensive systems and targeting.', baseCost: 500 },
+            { id: 2, name: 'Propulsion', desc: 'Engines, fuel, and range.', baseCost: 450 },
+            { id: 3, name: 'Construction', desc: 'Factories, hulls, and industry.', baseCost: 420 },
+            { id: 4, name: 'Electronics', desc: 'Sensors, automation, AI.', baseCost: 380 },
+            { id: 5, name: 'Biotech', desc: 'Population growth and terraforming.', baseCost: 460 }
+        ],
         hulls: [
-            { id: 'scout', name: 'Scout', cost: 20, mass: 10, slots: 2 },
-            { id: 'frig', name: 'Frigate', cost: 120, mass: 60, slots: 4 },
-            { id: 'dest', name: 'Destroyer', cost: 250, mass: 120, slots: 6 },
-            { id: 'cru', name: 'Cruiser', cost: 600, mass: 300, slots: 8 },
-            { id: 'bb', name: 'Battleship', cost: 1500, mass: 900, slots: 12 }
+            { id: 'scout', name: 'Scout', cost: 20, mass: 10, slots: 2, baseFuel: 80 },
+            { id: 'frig', name: 'Frigate', cost: 120, mass: 60, slots: 4, baseFuel: 200 },
+            { id: 'dest', name: 'Destroyer', cost: 250, mass: 120, slots: 6, baseFuel: 350 },
+            { id: 'cru', name: 'Cruiser', cost: 600, mass: 300, slots: 8, baseFuel: 600 },
+            { id: 'bb', name: 'Battleship', cost: 1500, mass: 900, slots: 12, baseFuel: 1200 }
         ],
         engines: [
-            { id: 'std', name: 'Std. Drive', cost: 10, power: 5, fuel: 1 },
-            { id: 'hydro', name: 'Hydro-Ram', cost: 50, power: 8, fuel: 2 },
-            { id: 'fusion', name: 'Fusion Pulse', cost: 150, power: 12, fuel: 0.8 }
+            { id: 'std', name: 'Std. Drive', cost: 10, power: 5, fuelUse: 1.0, scan: 180 },
+            { id: 'hydro', name: 'Hydro-Ram', cost: 50, power: 8, fuelUse: 1.2, scan: 230 },
+            { id: 'fusion', name: 'Fusion Pulse', cost: 150, power: 12, fuelUse: 0.8, scan: 280 }
         ],
         weapons: [
             { id: 'none', name: 'None', cost: 0, dmg: 0 },
@@ -215,12 +421,118 @@
             { id: 'plas', name: 'Plasma Bolt', cost: 120, dmg: 100 }
         ],
         specials: [
-            { id: 'none', name: 'None', cost: 0 },
-            { id: 'col', name: 'Colony Module', cost: 200, mass: 50 },
-            { id: 'mine', name: 'Mine Layer', cost: 100, mass: 20 },
-            { id: 'driver', name: 'Mass Driver', cost: 300, mass: 100 }
+            { id: 'none', name: 'None', cost: 0, mass: 0 },
+            { id: 'col', name: 'Colony Module', cost: 200, mass: 50, flags: ['colonize'] },
+            { id: 'mine', name: 'Mine Layer', cost: 100, mass: 20, flags: ['minelayer'] },
+            { id: 'driver', name: 'Mass Driver', cost: 300, mass: 100, flags: ['driver'] }
         ]
     };
+
+    // --- DATA CLASSES ---
+    class Star {
+        constructor({ id, x, y, name, owner = null }) {
+            this.id = id;
+            this.x = x;
+            this.y = y;
+            this.name = name;
+            this.owner = owner;
+            this.pop = 0;
+            this.mins = { i: r(100), b: r(100), g: r(100) };
+            this.def = { mines: 0, facts: 0, base: null };
+            this.queue = null;
+            this.visible = false;
+            this.known = false;
+            this.snapshot = null;
+        }
+
+        updateSnapshot() {
+            this.snapshot = {
+                owner: this.owner,
+                pop: this.pop,
+                mins: { ...this.mins },
+                def: { ...this.def }
+            };
+        }
+    }
+
+    class ShipDesign {
+        constructor({ name, hull, engine, weapon, shield, special }) {
+            this.name = name;
+            this.hull = hull;
+            this.engine = engine;
+            this.weapon = weapon;
+            this.shield = shield;
+            this.special = special;
+            this.cost = hull.cost + engine.cost + weapon.cost + shield.cost + special.cost;
+            this.mass = hull.mass + (special.mass || 0);
+            this.fuel = Math.floor(hull.baseFuel + engine.power * 40);
+            this.range = Math.floor(engine.scan + hull.baseFuel * 0.4);
+            this.speed = Math.max(1, Math.floor(engine.power - hull.mass / 120));
+            this.bv = weapon.dmg * 2 + (shield.dmg || 0);
+            this.flags = special.flags || [];
+        }
+    }
+
+    class Fleet {
+        constructor({ id, owner, x, y, name, design }) {
+            this.id = id;
+            this.owner = owner;
+            this.x = x;
+            this.y = y;
+            this.name = name;
+            this.design = design;
+            this.fuel = design.fuel;
+            this.dest = null;
+            this.hp = 100 + design.bv;
+        }
+
+        get speed() {
+            return Math.max(15, this.design.speed * 12);
+        }
+
+        get scan() {
+            return this.design.range;
+        }
+    }
+
+    class Minefield {
+        constructor({ x, y, radius, owner }) {
+            this.x = x;
+            this.y = y;
+            this.radius = radius;
+            this.owner = owner;
+        }
+    }
+
+    class ResourcePacket {
+        constructor({ x, y, destX, destY, payload }) {
+            this.x = x;
+            this.y = y;
+            this.destX = destX;
+            this.destY = destY;
+            this.payload = payload;
+        }
+    }
+
+    class Message {
+        constructor({ turn, sender, text, priority = 'normal' }) {
+            this.turn = turn;
+            this.sender = sender;
+            this.text = text;
+            this.priority = priority;
+        }
+    }
+
+    class Race {
+        constructor({ name, type, grav, temp, growth, mining }) {
+            this.name = name;
+            this.type = type;
+            this.grav = grav;
+            this.temp = temp;
+            this.growth = growth;
+            this.mining = mining;
+        }
+    }
 
     // --- GAME STATE ---
     const Game = {
@@ -230,154 +542,369 @@
         minerals: 5000,
         stars: [],
         fleets: [],
-        packets: [], // Minerals in flight
-        minefields: [], 
+        packets: [],
+        minefields: [],
         designs: [],
         messages: [],
-        research: { field: 0, levels: [0,0,0,0,0,0], progress: 0 },
-        
+        research: {
+            field: 0,
+            levels: [0, 0, 0, 0, 0, 0],
+            progress: 0,
+            budget: 15
+        },
+        race: new Race({
+            name: 'The Ashen Arc',
+            type: 'Synthetic Nomads',
+            grav: '0.3g - 4.2g',
+            temp: '-80° - 140°',
+            growth: '+17%',
+            mining: 'Adaptive'
+        }),
         selection: null,
+        activeScanners: [],
 
         init: function() {
-            // Default Design
-            this.designs.push({ name: "Probe v1", hull: DB.hulls[0], eng: DB.engines[0], wep: DB.weapons[0], spec: DB.specials[0], cost: 30, fuel: 100 });
-            this.designs.push({ name: "Colony Ark", hull: DB.hulls[1], eng: DB.engines[0], wep: DB.weapons[0], spec: DB.specials[1], cost: 280, fuel: 300 });
+            this.designs.push(new ShipDesign({
+                name: "Probe v1",
+                hull: DB.hulls[0],
+                engine: DB.engines[0],
+                weapon: DB.weapons[0],
+                shield: DB.weapons[0],
+                special: DB.specials[0]
+            }));
+            this.designs.push(new ShipDesign({
+                name: "Colony Ark",
+                hull: DB.hulls[1],
+                engine: DB.engines[0],
+                weapon: DB.weapons[0],
+                shield: DB.weapons[0],
+                special: DB.specials[1]
+            }));
 
-            // Generate Galaxy
-            for(let i=0; i<80; i++) {
-                this.stars.push({
-                    id: i,
-                    x: Math.random()*3000, y: Math.random()*3000,
-                    name: `S-${100+i}`,
-                    owner: null,
-                    pop: 0,
-                    mins: {i: r(100), b: r(100), g: r(100)},
-                    def: { mines: 0, facts: 0, base: null },
-                    queue: null
-                });
-            }
+            this.generateGalaxy(80);
+            this.seedHomeworld();
+            this.seedRival();
 
-            // Setup Home
-            const h = this.stars[0];
-            h.x = 1500; h.y = 1500;
-            h.owner = 1; // Player
-            h.name = "HOMEWORLD";
-            h.pop = 50000;
-            h.def.mines = 100;
-            h.def.facts = 100;
-            h.def.base = { name: "Starbase I", hp: 1000 };
-
-            // Setup Fleet
-            this.fleets.push({
-                id: 1, owner: 1, x: h.x, y: h.y, name: "Scout 1", 
-                design: this.designs[0], fuel: 100, dest: null
-            });
-            this.fleets.push({
-                id: 2, owner: 1, x: h.x, y: h.y, name: "Colony 1", 
-                design: this.designs[1], fuel: 300, dest: null
-            });
-
-            // Initial Messages
             this.logMsg("Welcome, Emperor. The sector is uncharted.", "System");
 
             Renderer.init();
             UI.init();
+            this.updateVisibility();
+        },
+
+        generateGalaxy: function(count) {
+            for (let i = 0; i < count; i++) {
+                this.stars.push(new Star({
+                    id: i,
+                    x: Math.random() * 3200,
+                    y: Math.random() * 3200,
+                    name: `S-${120 + i}`,
+                    owner: null
+                }));
+            }
+        },
+
+        seedHomeworld: function() {
+            const h = this.stars[0];
+            h.x = 1600;
+            h.y = 1600;
+            h.owner = 1;
+            h.name = "HOMEWORLD";
+            h.pop = 62000;
+            h.def.mines = 120;
+            h.def.facts = 140;
+            h.def.base = { name: "Starbase I", hp: 1000 };
+
+            this.fleets.push(new Fleet({
+                id: 1,
+                owner: 1,
+                x: h.x,
+                y: h.y,
+                name: "Scout 1",
+                design: this.designs[0]
+            }));
+            this.fleets.push(new Fleet({
+                id: 2,
+                owner: 1,
+                x: h.x,
+                y: h.y,
+                name: "Colony 1",
+                design: this.designs[1]
+            }));
+        },
+
+        seedRival: function() {
+            const rival = this.stars[10];
+            rival.owner = 2;
+            rival.name = "CRIMSON NODE";
+            rival.pop = 40000;
+            rival.def.mines = 80;
+            rival.def.facts = 90;
+            rival.def.base = { name: "Ravager Hub", hp: 900 };
+
+            const enemyDesign = new ShipDesign({
+                name: "Raider",
+                hull: DB.hulls[0],
+                engine: DB.engines[1],
+                weapon: DB.weapons[1],
+                shield: DB.weapons[0],
+                special: DB.specials[0]
+            });
+
+            this.fleets.push(new Fleet({
+                id: 3,
+                owner: 2,
+                x: rival.x,
+                y: rival.y,
+                name: "Raider Wing",
+                design: enemyDesign
+            }));
         },
 
         turn: function() {
             this.year++;
             this.turnCount++;
 
-            // 1. Move Packets
-            // (Placeholder logic)
+            this.processPackets();
+            this.processFleets();
+            this.processPlanets();
+            this.processResearch();
+            this.processAI();
 
-            // 2. Move Fleets
-            this.fleets.forEach(f => {
-                if(f.dest) {
-                    const dx = f.dest.x - f.x, dy = f.dest.y - f.y;
-                    const dist = Math.sqrt(dx*dx + dy*dy);
-                    const speed = 60; // Simplified
-                    if(dist <= speed) {
-                        f.x = f.dest.x; f.y = f.dest.y; f.dest = null;
-                        this.arrived(f);
-                    } else {
-                        const angle = Math.atan2(dy, dx);
-                        f.x += Math.cos(angle)*speed; f.y += Math.sin(angle)*speed;
-                        f.fuel -= 1; // Burn fuel
-                    }
-                }
-            });
-
-            // 3. Planet Production
-            let taxTotal = 0;
-            this.stars.filter(s => s.owner === 1).forEach(s => {
-                // Growth
-                s.pop = Math.min(1000000, Math.floor(s.pop * 1.05));
-                // Income
-                taxTotal += Math.floor(s.pop / 1000);
-                
-                // Build Queue
-                if(s.queue) {
-                    s.queue.done += s.def.facts; // Factory output
-                    if(s.queue.done >= s.queue.cost) {
-                        this.buildComplete(s);
-                    }
-                }
-            });
-            this.credits += taxTotal;
-
-            // 4. Research
-            const budget = 100; // Placeholder
-            this.research.progress += budget;
-            if(this.research.progress > 500) {
-                this.research.levels[this.research.field]++;
-                this.research.progress = 0;
-                this.logMsg(`${DB.techs[this.research.field]} Tech Advanced to Level ${this.research.levels[this.research.field]}`, "Research");
-            }
-
-            // 5. Random Events / AI (Mock)
-            if(Math.random() > 0.9) {
-                this.logMsg("Sub-space anomaly detected in Sector 7.", "Science");
-            }
-
-            Renderer.cam.dirty = true; // force redraw
+            this.updateVisibility();
+            Renderer.cam.dirty = true;
             UI.updateHeader();
             UI.updateSide();
+            UI.updateEmpire();
+            UI.updateFleets();
         },
 
-        arrived: function(f) {
-            const s = this.stars.find(st => dist(st, f) < 10);
-            if(s) {
-                if(!s.owner && f.design.spec.id === 'col') {
-                    s.owner = 1;
-                    s.pop = 2000; // Colonists unloaded
-                    this.logMsg(`${s.name} Colonized!`, "Expansion");
-                    // Destroy fleet (module used) - simplistic
-                    this.fleets = this.fleets.filter(x => x.id !== f.id);
+        processPackets: function() {
+            this.packets.forEach(packet => {
+                const dx = packet.destX - packet.x;
+                const dy = packet.destY - packet.y;
+                const dist = Math.hypot(dx, dy);
+                const speed = 80;
+                if (dist <= speed) {
+                    packet.x = packet.destX;
+                    packet.y = packet.destY;
                 } else {
-                    this.logMsg(`${f.name} arrived at ${s.name}`, "Fleet");
+                    const angle = Math.atan2(dy, dx);
+                    packet.x += Math.cos(angle) * speed;
+                    packet.y += Math.sin(angle) * speed;
                 }
-            }
+            });
         },
 
-        buildComplete: function(s) {
-            const bp = s.queue.bp;
-            this.fleets.push({
-                id: Date.now(), owner: 1, x: s.x, y: s.y, name: `${bp.name} ${r(99)}`,
-                design: bp, fuel: bp.fuel, dest: null
+        processFleets: function() {
+            this.fleets.forEach(fleet => {
+                if (!fleet.dest) {
+                    return;
+                }
+                const dx = fleet.dest.x - fleet.x;
+                const dy = fleet.dest.y - fleet.y;
+                const dist = Math.hypot(dx, dy);
+                const speed = fleet.speed;
+                const fuelUse = Math.max(1, speed / 60);
+
+                if (fleet.fuel <= 0) {
+                    fleet.dest = null;
+                    this.logMsg(`${fleet.name} has exhausted fuel reserves.`, "Command");
+                    return;
+                }
+
+                if (dist <= speed) {
+                    fleet.x = fleet.dest.x;
+                    fleet.y = fleet.dest.y;
+                    fleet.dest = null;
+                    fleet.fuel = Math.max(0, fleet.fuel - fuelUse * 2);
+                    this.handleArrival(fleet);
+                } else {
+                    const angle = Math.atan2(dy, dx);
+                    fleet.x += Math.cos(angle) * speed;
+                    fleet.y += Math.sin(angle) * speed;
+                    fleet.fuel = Math.max(0, fleet.fuel - fuelUse);
+                }
             });
-            this.logMsg(`Production of ${bp.name} complete at ${s.name}`, "Industry");
-            s.queue = null;
+        },
+
+        processPlanets: function() {
+            let taxTotal = 0;
+            let industrialOutput = 0;
+            this.stars.filter(s => s.owner === 1).forEach(star => {
+                const growthRate = 1 + 0.02 + (this.research.levels[5] * 0.005);
+                star.pop = Math.min(1500000, Math.floor(star.pop * growthRate));
+                const income = Math.floor(star.pop / 900);
+                taxTotal += income;
+                industrialOutput += star.def.facts;
+                this.minerals += Math.floor((star.def.mines * (star.mins.i + star.mins.b + star.mins.g)) / 300);
+
+                if (star.queue) {
+                    star.queue.done += star.def.facts;
+                    if (star.queue.done >= star.queue.cost) {
+                        this.buildComplete(star, star.queue.bp);
+                    }
+                }
+            });
+
+            this.credits += taxTotal;
+            UI.empireCache = { taxTotal, industrialOutput };
+        },
+
+        processResearch: function() {
+            const budget = Math.floor((this.credits * this.research.budget) / 1000);
+            this.research.progress += budget;
+            const cost = this.researchCost(this.research.field);
+
+            if (this.research.progress >= cost) {
+                this.research.levels[this.research.field]++;
+                this.research.progress = 0;
+                this.logMsg(`${DB.techs[this.research.field].name} Tech Advanced to Level ${this.research.levels[this.research.field]}`, "Research");
+            }
+            UI.updateResearch();
+        },
+
+        processAI: function() {
+            this.fleets.filter(f => f.owner === 2 && !f.dest).forEach(f => {
+                const target = this.stars[r(this.stars.length)];
+                f.dest = { x: target.x, y: target.y };
+            });
+        },
+
+        handleArrival: function(fleet) {
+            const star = this.stars.find(st => dist(st, fleet) < 12);
+            if (!star) {
+                return;
+            }
+
+            if (star.owner && star.owner !== fleet.owner) {
+                this.generateCombat(fleet, star);
+                return;
+            }
+
+            if (!star.owner && fleet.design.flags.includes('colonize')) {
+                star.owner = fleet.owner;
+                star.pop = 2500;
+                star.def.mines = 20;
+                star.def.facts = 20;
+                this.logMsg(`${star.name} Colonized!`, "Expansion");
+                this.fleets = this.fleets.filter(x => x.id !== fleet.id);
+                return;
+            }
+
+            this.logMsg(`${fleet.name} arrived at ${star.name}`, "Fleet");
+        },
+
+        buildComplete: function(star, blueprint) {
+            this.spawnShip(star, blueprint);
+            this.logMsg(`Production of ${blueprint.name} complete at ${star.name}`, "Industry");
+            star.queue = null;
         },
 
         saveDesign: function() {
-            // Placeholder save logic
-            this.logMsg("New Ship Design saved to database.", "Engineering");
+            const hull = DB.hulls.find(h => h.id === document.getElementById('des-hull').value);
+            const engine = DB.engines.find(e => e.id === document.getElementById('des-eng').value);
+            const weapon = DB.weapons.find(w => w.id === document.getElementById('des-wep').value);
+            const shield = DB.weapons.find(w => w.id === document.getElementById('des-shi').value);
+            const special = DB.specials.find(s => s.id === document.getElementById('des-spec').value);
+            const name = document.getElementById('des-name').value || `Design-${r(99)}`;
+
+            const design = new ShipDesign({ name, hull, engine, weapon, shield, special });
+            this.designs.push(design);
+            UI.updateDesignList();
+            UI.updateSide();
+            this.logMsg(`New Ship Design "${design.name}" saved.`, "Engineering");
         },
 
-        logMsg: function(txt, sender) {
-            this.messages.unshift({turn: this.year, txt, sender});
+        queueBuild: function(star, designIndex) {
+            const blueprint = this.designs[designIndex];
+            if (!blueprint) {
+                return;
+            }
+            if (this.credits < blueprint.cost) {
+                this.logMsg(`Insufficient credits to build ${blueprint.name}.`, "Industry");
+                return;
+            }
+            this.credits -= blueprint.cost;
+            star.queue = { bp: blueprint, cost: blueprint.cost, done: 0 };
+            UI.updateHeader();
+            UI.updateSide();
+            this.logMsg(`Construction of ${blueprint.name} started at ${star.name}.`, "Industry");
+        },
+
+        spawnShip: function(star, blueprint) {
+            this.fleets.push(new Fleet({
+                id: Date.now(),
+                owner: 1,
+                x: star.x,
+                y: star.y,
+                name: `${blueprint.name} ${r(99)}`,
+                design: blueprint
+            }));
+        },
+
+        logMsg: function(text, sender, priority = 'normal') {
+            this.messages.unshift(new Message({ turn: this.year, sender, text, priority }));
             UI.updateComms();
+        },
+
+        generateCombat: function(attacker, defenderStar) {
+            const attackPower = attacker.design.bv + r(30);
+            const defensePower = (defenderStar.def.base ? 120 : 40) + defenderStar.def.mines;
+            const result = attackPower > defensePower ? 'attacker' : 'defender';
+            const battleLog = `Combat at ${defenderStar.name}: ${attacker.name} engaged defenses. Outcome: ${result.toUpperCase()}.`;
+            this.logMsg(battleLog, "Combat", "high");
+
+            if (result === 'attacker') {
+                defenderStar.owner = attacker.owner;
+                defenderStar.pop = Math.floor(defenderStar.pop * 0.4);
+                defenderStar.def.base = null;
+            } else {
+                this.fleets = this.fleets.filter(f => f.id !== attacker.id);
+            }
+        },
+
+        scanSector: function(star) {
+            const range = 200 + this.research.levels[4] * 20;
+            this.activeScanners.push({ x: star.x, y: star.y, r: range, owner: 1 });
+        },
+
+        placeMinefield: function(fleet, range) {
+            if (!fleet.design.flags.includes('minelayer')) {
+                this.logMsg("This fleet lacks a mine-laying module.", "Command");
+                return;
+            }
+            this.minefields.push(new Minefield({ x: fleet.x, y: fleet.y, radius: range, owner: fleet.owner }));
+            this.logMsg(`${fleet.name} deployed a minefield.`, "Command");
+        },
+
+        updateVisibility: function() {
+            this.activeScanners = [];
+            this.stars.forEach(star => {
+                if (star.owner === 1) {
+                    this.activeScanners.push({ x: star.x, y: star.y, r: 260, owner: 1 });
+                }
+            });
+            this.fleets.forEach(fleet => {
+                if (fleet.owner === 1) {
+                    this.activeScanners.push({ x: fleet.x, y: fleet.y, r: fleet.scan, owner: 1 });
+                }
+            });
+
+            this.stars.forEach(star => {
+                const visible = this.activeScanners.some(scan => dist(scan, star) <= scan.r);
+                if (visible) {
+                    star.visible = true;
+                    star.known = true;
+                    star.updateSnapshot();
+                } else if (star.known) {
+                    star.visible = false;
+                }
+            });
+        },
+
+        researchCost: function(field) {
+            return DB.techs[field].baseCost + this.research.levels[field] * 200;
         }
     };
 
@@ -385,177 +912,315 @@
     const Renderer = {
         cvs: document.getElementById('galaxy-canvas'),
         ctx: document.getElementById('galaxy-canvas').getContext('2d'),
-        cam: { x: 1500, y: 1500, zoom: 1, dirty: true },
+        cam: { x: 1600, y: 1600, zoom: 1, dirty: true },
+        time: 0,
 
         init: function() {
             window.addEventListener('resize', this.resize.bind(this));
             this.resize();
-            
-            // Input Handlers
-            let drag = false, lx=0, ly=0;
+
+            let drag = false;
+            let lx = 0;
+            let ly = 0;
             this.cvs.addEventListener('mousedown', e => {
-                if(e.button===2) { drag=true; lx=e.clientX; ly=e.clientY; } // Pan
-                else this.click(e); // Select
-            });
-            window.addEventListener('mouseup', () => drag=false);
-            window.addEventListener('mousemove', e => {
-                if(drag) {
-                    this.cam.x -= (e.clientX - lx);
-                    this.cam.y -= (e.clientY - ly);
-                    lx=e.clientX; ly=e.clientY;
+                if (e.button === 1 || e.shiftKey) {
+                    drag = true;
+                    lx = e.clientX;
+                    ly = e.clientY;
+                    return;
                 }
-                // Mouse hover logic could go here
+                if (e.button === 2) {
+                    return;
+                }
+                this.click(e);
+            });
+            window.addEventListener('mouseup', () => { drag = false; });
+            window.addEventListener('mousemove', e => {
+                if (drag) {
+                    this.cam.x -= (e.clientX - lx) / this.cam.zoom;
+                    this.cam.y -= (e.clientY - ly) / this.cam.zoom;
+                    lx = e.clientX;
+                    ly = e.clientY;
+                    this.cam.dirty = true;
+                }
             });
             this.cvs.addEventListener('contextmenu', e => {
                 e.preventDefault();
-                if(Game.selection && Game.selection.type === 'fleet') {
+                if (Game.selection && Game.selection.type === 'fleet') {
                     const w = this.screenToWorld(e.clientX, e.clientY);
-                    Game.fleets[Game.selection.id].dest = {x: w.x, y: w.y};
+                    Game.fleets[Game.selection.id].dest = { x: w.x, y: w.y };
                     Game.logMsg("Fleet course plotted.", "Command");
                 }
             });
             this.cvs.addEventListener('wheel', e => {
                 this.cam.zoom *= e.deltaY > 0 ? 0.9 : 1.1;
+                this.cam.zoom = Math.min(2.2, Math.max(0.4, this.cam.zoom));
+                this.cam.dirty = true;
+            });
+
+            window.addEventListener('keydown', e => {
+                if (e.code === 'Space') {
+                    e.preventDefault();
+                    Game.turn();
+                }
+                if (e.code === 'Escape') {
+                    UI.setScreen('map');
+                }
             });
 
             this.loop();
         },
-        
+
         resize: function() {
             this.cvs.width = this.cvs.parentElement.offsetWidth;
             this.cvs.height = this.cvs.parentElement.offsetHeight;
+            this.cam.dirty = true;
+        },
+
+        worldToScreen: function(x, y) {
+            return {
+                x: (x - this.cam.x) * this.cam.zoom + this.cvs.width / 2,
+                y: (y - this.cam.y) * this.cam.zoom + this.cvs.height / 2
+            };
         },
 
         screenToWorld: function(sx, sy) {
             const r = this.cvs.getBoundingClientRect();
             return {
-                x: (sx - r.left - this.cvs.width/2) / this.cam.zoom + this.cam.x,
-                y: (sy - r.top - this.cvs.height/2) / this.cam.zoom + this.cam.y
+                x: (sx - r.left - this.cvs.width / 2) / this.cam.zoom + this.cam.x,
+                y: (sy - r.top - this.cvs.height / 2) / this.cam.zoom + this.cam.y
             };
         },
 
         click: function(e) {
             const w = this.screenToWorld(e.clientX, e.clientY);
             let hit = null;
-            // Check Fleets
-            Game.fleets.forEach((f,i) => { if(dist(f, w) < 20/this.cam.zoom) hit = {type:'fleet', id:i}; });
-            // Check Stars
-            if(!hit) Game.stars.forEach(s => { if(dist(s, w) < 20/this.cam.zoom) hit = {type:'star', id:s.id}; });
-            
+            Game.fleets.forEach((f, i) => {
+                const visible = f.owner === 1 || Game.activeScanners.some(scan => dist(scan, f) <= scan.r);
+                if (visible && dist(f, w) < 20 / this.cam.zoom) {
+                    hit = { type: 'fleet', id: i };
+                }
+            });
+            if (!hit) {
+                Game.stars.forEach(s => {
+                    if ((s.visible || s.known) && dist(s, w) < 20 / this.cam.zoom) {
+                        hit = { type: 'star', id: s.id };
+                    }
+                });
+            }
+
             Game.selection = hit;
             UI.updateSide();
         },
 
         loop: function() {
             requestAnimationFrame(this.loop.bind(this));
+            this.time += 0.003;
+            this.cam.dirty = true;
             this.draw();
         },
 
         draw: function() {
-            const ctx = this.ctx; const cvs = this.cvs;
-            const w = cvs.width; const h = cvs.height;
-            
-            ctx.fillStyle = '#000'; ctx.fillRect(0,0,w,h);
-            
+            this.cam.dirty = false;
+
+            const ctx = this.ctx;
+            const cvs = this.cvs;
+            const w = cvs.width;
+            const h = cvs.height;
+
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, w, h);
+
             ctx.save();
-            ctx.translate(w/2, h/2);
+            ctx.translate(w / 2, h / 2);
             ctx.scale(this.cam.zoom, this.cam.zoom);
             ctx.translate(-this.cam.x, -this.cam.y);
 
-            // 1. Grid
-            ctx.strokeStyle = '#1a1a20'; ctx.lineWidth = 2;
-            for(let i=0; i<3000; i+=200) { 
-                ctx.beginPath(); ctx.moveTo(i,0); ctx.lineTo(i,3000); ctx.stroke();
-                ctx.beginPath(); ctx.moveTo(0,i); ctx.lineTo(3000,i); ctx.stroke();
+            this.drawBackground(ctx);
+            this.drawMinefields(ctx);
+            this.drawScanners(ctx);
+            this.drawStars(ctx);
+            this.drawFleets(ctx);
+
+            ctx.restore();
+        },
+
+        drawBackground: function(ctx) {
+            ctx.strokeStyle = '#10151f';
+            ctx.lineWidth = 1;
+            const grid = 160;
+            const offset = (this.time * 40) % grid;
+            for (let i = -grid; i <= 3400; i += grid) {
+                ctx.beginPath();
+                ctx.moveTo(i + offset, 0);
+                ctx.lineTo(i + offset - 80, 3400);
+                ctx.stroke();
             }
+            for (let y = 0; y <= 3400; y += grid) {
+                ctx.beginPath();
+                ctx.moveTo(0, y + offset);
+                ctx.lineTo(3400, y + offset);
+                ctx.stroke();
+            }
+        },
 
-            // 2. Minefields (Placeholder Visual)
-            ctx.strokeStyle = '#ff005555'; ctx.lineWidth = 1;
+        drawMinefields: function(ctx) {
+            ctx.strokeStyle = '#ff005555';
+            ctx.lineWidth = 1;
             Game.minefields.forEach(m => {
-                ctx.beginPath(); ctx.arc(m.x, m.y, m.r, 0, Math.PI*2); ctx.stroke();
+                ctx.beginPath();
+                ctx.arc(m.x, m.y, m.radius, 0, Math.PI * 2);
+                ctx.stroke();
             });
+        },
 
-            // 3. Stars
-            Game.stars.forEach(s => {
-                const isSel = Game.selection && Game.selection.type==='star' && Game.selection.id===s.id;
-                const col = s.owner === 1 ? '#00f0ff' : (s.owner ? '#ff0055' : '#ffffff');
-                
-                // Scanner Range (if owned)
-                if(s.owner === 1) {
-                    ctx.strokeStyle = '#00f0ff22';
-                    ctx.beginPath(); ctx.arc(s.x, s.y, 200, 0, Math.PI*2); ctx.stroke();
+        drawScanners: function(ctx) {
+            Game.activeScanners.forEach(s => {
+                ctx.strokeStyle = '#00f0ff11';
+                ctx.beginPath();
+                ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+                ctx.stroke();
+            });
+        },
+
+        drawStars: function(ctx) {
+            Game.stars.forEach(star => {
+                if (!star.visible && !star.known) {
+                    return;
                 }
+                const isSel = Game.selection && Game.selection.type === 'star' && Game.selection.id === star.id;
+                const info = star.visible ? star : star.snapshot;
+                const col = info.owner === 1 ? '#00f0ff' : (info.owner ? '#ff0055' : '#ffffff');
+                const alpha = star.visible ? 1 : 0.35;
 
                 ctx.fillStyle = col;
-                ctx.shadowColor = col; ctx.shadowBlur = s.owner?15:0;
-                ctx.beginPath(); ctx.arc(s.x, s.y, s.owner?6:3, 0, Math.PI*2); ctx.fill();
+                ctx.globalAlpha = alpha;
+                ctx.shadowColor = col;
+                ctx.shadowBlur = info.owner ? 15 : 0;
+                ctx.beginPath();
+                ctx.arc(star.x, star.y, info.owner ? 6 : 3, 0, Math.PI * 2);
+                ctx.fill();
                 ctx.shadowBlur = 0;
 
-                // Name
-                if(s.owner || isSel) {
-                    ctx.fillStyle = '#889'; ctx.font = "10px monospace";
-                    ctx.fillText(s.name, s.x+10, s.y);
+                if (info.owner || isSel) {
+                    ctx.fillStyle = '#889';
+                    ctx.font = '10px monospace';
+                    ctx.fillText(star.name, star.x + 10, star.y);
                 }
 
-                if(isSel) {
-                    ctx.strokeStyle = '#fff'; ctx.strokeRect(s.x-8, s.y-8, 16, 16);
+                if (isSel) {
+                    ctx.strokeStyle = '#fff';
+                    ctx.strokeRect(star.x - 8, star.y - 8, 16, 16);
                 }
+                ctx.globalAlpha = 1;
             });
+        },
 
-            // 4. Fleets
-            Game.fleets.forEach((f, i) => {
-                const isSel = Game.selection && Game.selection.type==='fleet' && Game.selection.id===i;
-                ctx.fillStyle = '#ffcc00';
-                
-                if(f.dest) {
-                    ctx.strokeStyle = '#aa8800'; ctx.setLineDash([5,5]);
-                    ctx.beginPath(); ctx.moveTo(f.x, f.y); ctx.lineTo(f.dest.x, f.dest.y); ctx.stroke();
+        drawFleets: function(ctx) {
+            Game.fleets.forEach((fleet, i) => {
+                const visible = fleet.owner === 1 || Game.activeScanners.some(scan => dist(scan, fleet) <= scan.r);
+                if (!visible) {
+                    return;
+                }
+                const isSel = Game.selection && Game.selection.type === 'fleet' && Game.selection.id === i;
+                ctx.fillStyle = fleet.owner === 1 ? '#ffcc00' : '#ff2255';
+
+                if (fleet.dest) {
+                    ctx.strokeStyle = '#aa8800';
+                    ctx.setLineDash([5, 5]);
+                    ctx.beginPath();
+                    ctx.moveTo(fleet.x, fleet.y);
+                    ctx.lineTo(fleet.dest.x, fleet.dest.y);
+                    ctx.stroke();
                     ctx.setLineDash([]);
                 }
 
                 ctx.save();
-                ctx.translate(f.x, f.y);
-                if(isSel) { ctx.strokeStyle='#fff'; ctx.beginPath(); ctx.arc(0,0,12,0,Math.PI*2); ctx.stroke(); }
-                // Triangle ship
-                ctx.beginPath(); ctx.moveTo(6,0); ctx.lineTo(-5,4); ctx.lineTo(-5,-4); ctx.fill();
+                ctx.translate(fleet.x, fleet.y);
+                if (isSel) {
+                    ctx.strokeStyle = '#fff';
+                    ctx.beginPath();
+                    ctx.arc(0, 0, 12, 0, Math.PI * 2);
+                    ctx.stroke();
+                }
+                ctx.beginPath();
+                ctx.moveTo(8, 0);
+                ctx.lineTo(-6, 5);
+                ctx.lineTo(-6, -5);
+                ctx.closePath();
+                ctx.fill();
                 ctx.restore();
             });
-
-            ctx.restore();
         }
     };
 
     // --- UI MANAGER ---
     const UI = {
+        empireCache: { taxTotal: 0, industrialOutput: 0 },
+
         init: function() {
             this.renderTech();
             this.popDropdowns();
+            this.updateDesignStats();
             this.updateHeader();
+            this.updateComms();
+            this.updateDesignList();
+            this.updateEmpire();
+            this.updateFleets();
+            this.updateResearch();
+
+            document.getElementById('rd-slider').addEventListener('input', e => {
+                Game.research.budget = parseInt(e.target.value, 10);
+                document.getElementById('rd-budget').innerText = Game.research.budget;
+            });
+
+            ['des-hull', 'des-eng', 'des-wep', 'des-shi', 'des-spec'].forEach(id => {
+                document.getElementById(id).addEventListener('change', () => this.updateDesignStats());
+            });
         },
 
         setScreen: function(id) {
             document.querySelectorAll('.screen-overlay').forEach(el => el.classList.remove('active'));
             document.querySelectorAll('.icon-btn').forEach(el => el.classList.remove('active'));
-            
-            if(id !== 'map') document.getElementById(`screen-${id}`).classList.add('active');
-            
-            // Update Stats specific to screens
-            if(id === 'empire') this.updateEmpire();
-            if(id === 'comms') this.updateComms();
+
+            if (id !== 'map') {
+                document.getElementById(`screen-${id}`).classList.add('active');
+            }
+            document.querySelector(`button[onclick="UI.setScreen('${id}')"]`)?.classList.add('active');
+
+            if (id === 'empire') this.updateEmpire();
+            if (id === 'comms') this.updateComms();
+            if (id === 'fleets') this.updateFleets();
+            if (id === 'research') this.updateResearch();
         },
 
         updateHeader: function() {
             document.getElementById('g-year').innerText = Game.year;
             document.getElementById('g-cred').innerText = Game.credits;
-            document.getElementById('g-metal').innerText = Game.minerals;
+            document.getElementById('g-metal').innerText = `${(Game.minerals / 1000).toFixed(1)}k`;
+            document.getElementById('g-rd').innerText = `${Game.research.progress}`;
         },
 
         updateEmpire: function() {
-            let pop = 0, tax = 0;
-            Game.stars.filter(s=>s.owner===1).forEach(s=>{ pop+=s.pop; tax+=Math.floor(s.pop/1000); });
+            let pop = 0;
+            let tax = 0;
+            Game.stars.filter(s => s.owner === 1).forEach(s => {
+                pop += s.pop;
+                tax += Math.floor(s.pop / 900);
+            });
             document.getElementById('emp-pop').innerText = pop.toLocaleString();
-            document.getElementById('emp-tax').innerText = tax + "cr";
-            document.getElementById('emp-maint').innerText = "-" + (Game.fleets.length * 10) + "cr";
+            document.getElementById('emp-tax').innerText = `${tax}cr`;
+            document.getElementById('emp-maint').innerText = `-${Game.fleets.filter(f => f.owner === 1).length * 10}cr`;
+            document.getElementById('emp-ind').innerText = `${this.empireCache.industrialOutput}`;
+            document.getElementById('emp-vis').innerText = Game.stars.filter(s => s.visible).length;
+            document.getElementById('emp-known').innerText = Game.stars.filter(s => s.known).length;
+            document.getElementById('emp-fleets').innerText = Game.fleets.filter(f => f.owner === 1).length;
+
+            document.getElementById('race-type').innerText = Game.race.type;
+            document.getElementById('race-grav').innerText = Game.race.grav;
+            document.getElementById('race-temp').innerText = Game.race.temp;
+            document.getElementById('race-growth').innerText = Game.race.growth;
+            document.getElementById('race-mining').innerText = Game.race.mining;
         },
 
         updateComms: function() {
@@ -563,102 +1228,222 @@
             list.innerHTML = "";
             Game.messages.forEach(m => {
                 const div = document.createElement('div');
-                div.style.padding = "5px"; div.style.borderBottom="1px solid #223"; div.style.cursor="pointer";
-                div.innerHTML = `<span style="color:#0ff">${m.turn}</span> <span style="color:#aa0">[${m.sender}]</span> ${m.txt.substring(0,20)}...`;
-                div.onclick = () => document.getElementById('msg-body').innerText = `FROM: ${m.sender}\nYEAR: ${m.turn}\n\n${m.txt}`;
+                div.style.padding = "5px";
+                div.style.borderBottom = "1px solid #223";
+                div.style.cursor = "pointer";
+                div.innerHTML = `<span style="color:#0ff">${m.turn}</span> <span style="color:#aa0">[${m.sender}]</span> ${m.text.substring(0, 24)}...`;
+                div.onclick = () => {
+                    document.getElementById('msg-body').innerText = `FROM: ${m.sender}\nYEAR: ${m.turn}\n\n${m.text}`;
+                };
                 list.appendChild(div);
             });
+            document.getElementById('footer-log').innerText = Game.messages[0]?.text || 'READY.';
         },
 
         renderTech: function() {
             const g = document.getElementById('tech-grid');
+            g.innerHTML = '';
             DB.techs.forEach((t, i) => {
                 const d = document.createElement('div');
                 d.className = 'card';
-                d.innerHTML = `<h3>${t}</h3><div class="val">Level: <span id="tech-lvl-${i}">0</span></div><div class="bar-wrap"><div class="bar-fill" style="width:0%" id="tech-bar-${i}"></div></div>`;
+                d.innerHTML = `
+                    <h3>${t.name}</h3>
+                    <div style="font-size:12px; margin-bottom:8px;">${t.desc}</div>
+                    <div class="val">Level: <span id="tech-lvl-${i}">0</span></div>
+                    <div class="bar-wrap"><div class="bar-fill" style="width:0%" id="tech-bar-${i}"></div></div>
+                    <button class="action" data-tech="${i}">Focus Research</button>
+                `;
+                d.querySelector('button').addEventListener('click', e => {
+                    Game.research.field = parseInt(e.target.dataset.tech, 10);
+                    this.updateResearch();
+                });
                 g.appendChild(d);
+            });
+        },
+
+        updateResearch: function() {
+            document.getElementById('tech-focus').innerText = DB.techs[Game.research.field].name;
+            document.getElementById('rd-budget').innerText = Game.research.budget;
+
+            DB.techs.forEach((t, i) => {
+                const lvl = Game.research.levels[i];
+                const cost = Game.researchCost(i);
+                const fill = i === Game.research.field ? Math.min(100, Math.floor((Game.research.progress / cost) * 100)) : 0;
+                document.getElementById(`tech-lvl-${i}`).innerText = lvl;
+                document.getElementById(`tech-bar-${i}`).style.width = `${fill}%`;
             });
         },
 
         popDropdowns: function() {
             const fill = (id, list) => {
                 const sel = document.getElementById(id);
-                list.forEach(i => { let o = document.createElement('option'); o.value=i.id; o.text=`${i.name} (${i.cost}cr)`; sel.add(o); });
+                sel.innerHTML = '';
+                list.forEach(item => {
+                    const o = document.createElement('option');
+                    o.value = item.id;
+                    o.text = `${item.name} (${item.cost}cr)`;
+                    sel.add(o);
+                });
             };
-            fill('des-hull', DB.hulls); fill('des-eng', DB.engines); fill('des-wep', DB.weapons);
-            fill('des-shi', DB.weapons); // Placeholder reuse
+            fill('des-hull', DB.hulls);
+            fill('des-eng', DB.engines);
+            fill('des-wep', DB.weapons);
+            fill('des-shi', DB.weapons);
             fill('des-spec', DB.specials);
+        },
+
+        updateDesignStats: function() {
+            const hull = DB.hulls.find(h => h.id === document.getElementById('des-hull').value);
+            const engine = DB.engines.find(e => e.id === document.getElementById('des-eng').value);
+            const weapon = DB.weapons.find(w => w.id === document.getElementById('des-wep').value);
+            const shield = DB.weapons.find(w => w.id === document.getElementById('des-shi').value);
+            const special = DB.specials.find(s => s.id === document.getElementById('des-spec').value);
+
+            const design = new ShipDesign({
+                name: "TEMP",
+                hull,
+                engine,
+                weapon,
+                shield,
+                special
+            });
+
+            document.getElementById('sim-cost').innerText = design.cost;
+            document.getElementById('sim-mass').innerText = design.mass;
+            document.getElementById('sim-fuel').innerText = design.fuel;
+            document.getElementById('sim-range').innerText = design.range;
+            document.getElementById('sim-speed').innerText = design.speed;
+            document.getElementById('sim-bv').innerText = design.bv;
+        },
+
+        updateDesignList: function() {
+            const list = document.getElementById('design-list');
+            list.innerHTML = '';
+            Game.designs.forEach((design, index) => {
+                const row = document.createElement('div');
+                row.style.borderBottom = '1px solid #223';
+                row.style.padding = '6px 0';
+                row.innerHTML = `<strong>${design.name}</strong><br><span style="color:#889">Cost ${design.cost} | Range ${design.range} | Speed ${design.speed}</span>`;
+                const btn = document.createElement('button');
+                btn.className = 'action';
+                btn.style.marginTop = '6px';
+                btn.textContent = 'Queue Build';
+                btn.addEventListener('click', () => {
+                    if (!Game.selection || Game.selection.type !== 'star') {
+                        Game.logMsg('Select a star to queue production.', 'Industry');
+                        return;
+                    }
+                    const star = Game.stars[Game.selection.id];
+                    if (star.owner !== 1) {
+                        Game.logMsg('Star not under your control.', 'Industry');
+                        return;
+                    }
+                    Game.queueBuild(star, index);
+                });
+                row.appendChild(btn);
+                list.appendChild(row);
+            });
+        },
+
+        updateFleets: function() {
+            const grid = document.getElementById('fleet-grid');
+            grid.innerHTML = '';
+            Game.fleets.filter(f => f.owner === 1).forEach((fleet, idx) => {
+                const card = document.createElement('div');
+                card.className = 'card';
+                card.innerHTML = `
+                    <h3>${fleet.name}</h3>
+                    <div class="stat-row"><span>Class</span> <span class="val">${fleet.design.name}</span></div>
+                    <div class="stat-row"><span>Fuel</span> <span class="val">${fleet.fuel.toFixed(0)}</span></div>
+                    <div class="stat-row"><span>Speed</span> <span class="val">${fleet.design.speed}</span></div>
+                    <div class="stat-row"><span>Status</span> <span class="val">${fleet.dest ? 'In Transit' : 'Holding'}</span></div>
+                    <button class="action">Select</button>
+                `;
+                card.querySelector('button').addEventListener('click', () => {
+                    Game.selection = { type: 'fleet', id: Game.fleets.indexOf(fleet) };
+                    Renderer.cam.x = fleet.x;
+                    Renderer.cam.y = fleet.y;
+                    Renderer.cam.dirty = true;
+                    UI.updateSide();
+                    UI.setScreen('map');
+                });
+                grid.appendChild(card);
+            });
         },
 
         updateSide: function() {
             const p = document.getElementById('ctx-content');
             const none = document.getElementById('ctx-none');
-            
-            if(!Game.selection) { p.style.display='none'; none.style.display='block'; return; }
-            
-            p.style.display='block'; none.style.display='none';
-            let h = "";
-            
-            if(Game.selection.type === 'star') {
-                const s = Game.stars[Game.selection.id];
-                h += `<h3>${s.name}</h3>`;
-                h += `<div class="panel-block"><div class="stat-row"><span>Owner</span> <span class="val">${s.owner===1?'YOU':(s.owner?'ALIEN':'NONE')}</span></div>`;
-                h += `<div class="stat-row"><span>Pop</span> <span class="val">${s.pop.toLocaleString()}</span></div></div>`;
-                
-                h += `<h3>Resources</h3>`;
-                h += `<div class="stat-row"><span>Iron</span> <span class="val">${s.mins.i}%</span></div><div class="bar-wrap"><div class="bar-fill res-i" style="width:${s.mins.i}%"></div></div>`;
-                h += `<div class="stat-row"><span>Bor</span> <span class="val">${s.mins.b}%</span></div><div class="bar-wrap"><div class="bar-fill res-b" style="width:${s.mins.b}%"></div></div>`;
-                h += `<div class="stat-row"><span>Germ</span> <span class="val">${s.mins.g}%</span></div><div class="bar-wrap"><div class="bar-fill res-g" style="width:${s.mins.g}%"></div></div>`;
 
-                if(s.owner === 1) {
+            if (!Game.selection) {
+                p.style.display = 'none';
+                none.style.display = 'block';
+                return;
+            }
+
+            p.style.display = 'block';
+            none.style.display = 'none';
+            let h = "";
+
+            if (Game.selection.type === 'star') {
+                const star = Game.stars[Game.selection.id];
+                const info = star.visible ? star : star.snapshot;
+                if (!info) {
+                    h = `<div style="color:#666;">Signal lost.</div>`;
+                    p.innerHTML = h;
+                    return;
+                }
+                h += `<h3>${star.name} ${star.visible ? '' : '<span style="color:#666">(last known)</span>'}</h3>`;
+                h += `<div class="panel-block"><div class="stat-row"><span>Owner</span> <span class="val">${info.owner === 1 ? 'YOU' : (info.owner ? 'ALIEN' : 'NONE')}</span></div>`;
+                h += `<div class="stat-row"><span>Pop</span> <span class="val">${info.pop.toLocaleString()}</span></div></div>`;
+
+                h += `<h3>Resources</h3>`;
+                h += `<div class="stat-row"><span>Iron</span> <span class="val">${info.mins.i}%</span></div><div class="bar-wrap"><div class="bar-fill res-i" style="width:${info.mins.i}%"></div></div>`;
+                h += `<div class="stat-row"><span>Bor</span> <span class="val">${info.mins.b}%</span></div><div class="bar-wrap"><div class="bar-fill res-b" style="width:${info.mins.b}%"></div></div>`;
+                h += `<div class="stat-row"><span>Germ</span> <span class="val">${info.mins.g}%</span></div><div class="bar-wrap"><div class="bar-fill res-g" style="width:${info.mins.g}%"></div></div>`;
+
+                if (star.owner === 1 && star.visible) {
                     h += `<div class="panel-block" style="margin-top:15px;"><h3>Production</h3>`;
-                    h += `<div class="stat-row"><span>Mines</span> <span class="val">${s.def.mines}</span></div>`;
-                    h += `<div class="stat-row"><span>Factories</span> <span class="val">${s.def.facts}</span></div>`;
-                    h += `<div class="stat-row"><span>Starbase</span> <span class="val">${s.def.base?s.def.base.name:'None'}</span></div>`;
-                    
-                    if(s.queue) {
-                        h += `<div style="color:var(--c-warn); font-size:12px; margin-top:5px;">Building: ${s.queue.bp.name}<br>${Math.floor(s.queue.done)} / ${s.queue.cost}</div>`;
+                    h += `<div class="stat-row"><span>Mines</span> <span class="val">${star.def.mines}</span></div>`;
+                    h += `<div class="stat-row"><span>Factories</span> <span class="val">${star.def.facts}</span></div>`;
+                    h += `<div class="stat-row"><span>Starbase</span> <span class="val">${star.def.base ? star.def.base.name : 'None'}</span></div>`;
+
+                    if (star.queue) {
+                        h += `<div style="color:var(--c-warn); font-size:12px; margin-top:5px;">Building: ${star.queue.bp.name}<br>${Math.floor(star.queue.done)} / ${star.queue.cost}</div>`;
                     } else {
-                        h += `<button class="action" onclick="Game.build(0)">BUILD PROBE</button>`;
-                        h += `<button class="action" onclick="Game.build(1)">BUILD COLONY</button>`;
+                        h += `<div style="font-size:12px; margin-top:6px;">Queue a blueprint from the Design screen.</div>`;
                     }
                     h += `</div>`;
-                    
-                    // Mass Driver Placeholder
-                    h += `<div class="panel-block"><h3>Mass Driver</h3><input type="range" style="width:100%"><div class="stat-row"><span>Target:</span> <span class="val">None</span></div></div>`;
+
+                    h += `<div class="panel-block"><h3>Mass Driver</h3><input id="driver-range" type="range" min="0" max="100" value="0" style="width:100%"><div class="stat-row"><span>Target:</span> <span class="val">None</span></div></div>`;
                 }
 
             } else {
-                const f = Game.fleets[Game.selection.id];
-                h += `<h3>${f.name}</h3>`;
-                h += `<div class="stat-row"><span>Class</span> <span class="val">${f.design.name}</span></div>`;
-                h += `<div class="stat-row"><span>Fuel</span> <span class="val ${f.fuel<20?'alert':''}">${f.fuel.toFixed(0)}</span></div>`;
-                h += `<div class="stat-row"><span>Mission</span> <span class="val">${f.dest?'Transit':'Orbit'}</span></div>`;
-                h += `<div class="stat-row"><span>Cargo</span> <span class="val">0 / 0</span></div>`;
+                const fleet = Game.fleets[Game.selection.id];
+                h += `<h3>${fleet.name}</h3>`;
+                h += `<div class="stat-row"><span>Class</span> <span class="val">${fleet.design.name}</span></div>`;
+                h += `<div class="stat-row"><span>Fuel</span> <span class="val ${fleet.fuel < 20 ? 'alert' : ''}">${fleet.fuel.toFixed(0)}</span></div>`;
+                h += `<div class="stat-row"><span>Range</span> <span class="val">${fleet.design.range}</span></div>`;
+                h += `<div class="stat-row"><span>Mission</span> <span class="val">${fleet.dest ? 'Transit' : 'Orbit'}</span></div>`;
+                if (fleet.design.flags.includes('minelayer')) {
+                    h += `<button class="action" onclick="Game.placeMinefield(Game.fleets[${Game.selection.id}], 180)">DEPLOY MINEFIELD</button>`;
+                }
                 h += `<button class="action" style="border-color:var(--c-alert); color:var(--c-alert)">SCRAP FLEET</button>`;
             }
-            
+
             p.innerHTML = h;
         }
     };
 
-    Game.build = function(idx) {
-        if(!Game.selection || Game.selection.type !== 'star') return;
-        const s = Game.stars[Game.selection.id];
-        const bp = Game.designs[idx];
-        if(Game.credits >= bp.cost) {
-            Game.credits -= bp.cost;
-            s.queue = { bp: bp, cost: bp.cost, done: 0 };
-            UI.updateHeader(); UI.updateSide();
-            Game.logMsg(`Construction of ${bp.name} started.`, "Prod");
-        }
-    };
+    function dist(a, b) {
+        return Math.hypot(a.x - b.x, a.y - b.y);
+    }
 
-    function dist(a,b) { return Math.hypot(a.x-b.x, a.y-b.y); }
-    function r(n) { return Math.floor(Math.random()*n); }
+    function r(n) {
+        return Math.floor(Math.random() * n);
+    }
 
     window.onload = () => Game.init();
-
 </script>
 </body>
 </html>
