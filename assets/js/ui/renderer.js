@@ -14,6 +14,7 @@ export const Renderer = {
     time: 0,
     hoverMinefield: null,
     tooltip: document.getElementById('minefield-tooltip'),
+    jumpFx: { intensity: 0, ticks: 0, lastEventCount: 0 },
 
     init: function() {
         window.addEventListener('resize', this.resize.bind(this));
@@ -164,9 +165,12 @@ export const Renderer = {
         this.drawMinefields(ctx);
         this.drawScanners(ctx);
         this.drawStars(ctx);
+        this.drawStargates(ctx);
         this.drawFleets(ctx);
 
         ctx.restore();
+
+        this.drawJumpFx(ctx);
     },
 
     drawBackground: function(ctx) {
@@ -227,14 +231,95 @@ export const Renderer = {
             const isHostile = Boolean(field.ownerEmpireId && field.ownerEmpireId !== 1);
             const baseColor = isFriendly ? '0, 240, 255' : (isHostile ? '255, 0, 85' : '180, 180, 200');
             const flicker = 0.5 + Math.sin(this.time * 16 + field.id) * 0.2;
-            ctx.strokeStyle = `rgba(${baseColor}, ${0.35 + flicker * 0.35})`;
-            ctx.lineWidth = 1.2;
-            ctx.setLineDash([6, 6]);
+            const area = Math.PI * field.radius * field.radius;
+            const density = area > 0 ? field.estimatedStrength / area : 0;
+            const glow = Math.min(1, density * 18);
+            ctx.save();
+            ctx.strokeStyle = `rgba(${baseColor}, ${0.25 + glow * 0.5})`;
+            ctx.lineWidth = 1.4 + glow * 2.2;
+            ctx.shadowColor = `rgba(${baseColor}, ${0.25 + glow * 0.6})`;
+            ctx.shadowBlur = 12 + glow * 30;
+            ctx.setLineDash([8, 10]);
             ctx.beginPath();
             ctx.arc(field.center.x, field.center.y, field.radius, 0, Math.PI * 2);
             ctx.stroke();
             ctx.setLineDash([]);
+            ctx.shadowBlur = 0;
+            ctx.strokeStyle = `rgba(${baseColor}, ${0.25 + flicker * 0.5})`;
+            ctx.lineWidth = 0.8;
+            ctx.beginPath();
+            ctx.arc(field.center.x, field.center.y, field.radius * (0.92 + flicker * 0.05), 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
         });
+    },
+
+    drawStargates: function(ctx) {
+        Game.stars.forEach(star => {
+            if (!star.visible && !star.known) {
+                return;
+            }
+            const info = star.visible ? star : star.snapshot;
+            if (!info?.hasStargate) {
+                return;
+            }
+            const spin = this.time * 2.4;
+            const pulse = 0.6 + Math.sin(this.time * 6 + star.id) * 0.2;
+            ctx.save();
+            ctx.translate(star.x, star.y);
+            ctx.rotate(spin);
+            ctx.strokeStyle = `rgba(0, 240, 255, ${0.45 + pulse * 0.3})`;
+            ctx.lineWidth = 2.2;
+            ctx.shadowColor = `rgba(0, 240, 255, ${0.5 + pulse * 0.4})`;
+            ctx.shadowBlur = 18;
+            ctx.beginPath();
+            ctx.ellipse(0, 0, 28, 12, spin * 0.6, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.strokeStyle = `rgba(255, 0, 170, ${0.2 + pulse * 0.2})`;
+            ctx.lineWidth = 1.4;
+            ctx.beginPath();
+            ctx.ellipse(0, 0, 20, 8, -spin * 0.4, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
+
+            ctx.save();
+            ctx.strokeStyle = 'rgba(0, 240, 255, 0.35)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(star.x - 18, star.y - 6);
+            ctx.lineTo(star.x + 16, star.y + 4);
+            ctx.moveTo(star.x + 18, star.y - 4);
+            ctx.lineTo(star.x - 12, star.y + 8);
+            ctx.stroke();
+            ctx.restore();
+        });
+    },
+
+    drawJumpFx: function(ctx) {
+        const jumpEvents = Game.turnEvents?.filter(event => event.type === "STARGATE_JUMP") || [];
+        if (jumpEvents.length !== this.jumpFx.lastEventCount) {
+            this.jumpFx.lastEventCount = jumpEvents.length;
+            if (jumpEvents.length) {
+                this.jumpFx.intensity = 1;
+                this.jumpFx.ticks = 16;
+            }
+        }
+        if (this.jumpFx.ticks <= 0) {
+            return;
+        }
+        this.jumpFx.ticks -= 1;
+        const intensity = this.jumpFx.intensity * (this.jumpFx.ticks / 16);
+        ctx.save();
+        ctx.globalAlpha = 0.15 + intensity * 0.25;
+        ctx.fillStyle = "rgba(0, 240, 255, 0.25)";
+        ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+        ctx.globalAlpha = 0.12 + intensity * 0.2;
+        ctx.fillStyle = "rgba(255, 0, 170, 0.35)";
+        for (let i = 0; i < 6; i++) {
+            const y = Math.random() * ctx.canvas.height;
+            ctx.fillRect(0, y, ctx.canvas.width, 2 + Math.random() * 3);
+        }
+        ctx.restore();
     },
 
     drawScanners: function(ctx) {

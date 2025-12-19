@@ -13,6 +13,10 @@ class Star {
         this.visible = false;
         this.known = false;
         this.snapshot = null;
+        this.hasStargate = false;
+        this.stargateMassLimit = 0;
+        this.stargateRange = 0;
+        this.stargateTechLevel = 0;
     }
 
     updateSnapshot() {
@@ -20,7 +24,11 @@ class Star {
             owner: this.owner,
             pop: this.pop,
             mins: { ...this.mins },
-            def: { ...this.def }
+            def: { ...this.def },
+            hasStargate: this.hasStargate,
+            stargateMassLimit: this.stargateMassLimit,
+            stargateRange: this.stargateRange,
+            stargateTechLevel: this.stargateTechLevel
         };
     }
 }
@@ -46,6 +54,9 @@ class ShipDesign {
         this.powerUsage = finalStats.powerUsage;
         this.signature = finalStats.signature;
         this.mineCapacity = finalStats.mineCapacity;
+        this.mineLayingCapacity = finalStats.mineLayingCapacity;
+        this.mineSweepingStrength = finalStats.mineSweepingStrength;
+        this.mineHitpoints = finalStats.mineHitpoints;
         this.initiative = finalStats.initiative;
         this.flags = finalStats.flags || [];
     }
@@ -66,6 +77,10 @@ class Fleet {
         this.structure = design.structure;
         this.shields = design.shields;
         this.mineUnits = design.mineCapacity || 0;
+        this.mineLayingCapacity = design.mineLayingCapacity || 0;
+        this.mineSweepingStrength = design.mineSweepingStrength || 0;
+        this.mineHitpoints = design.mineHitpoints || (design.armor + design.structure);
+        this.mass = design.mass;
         this.hp = this.armor + this.structure + this.shields;
     }
 

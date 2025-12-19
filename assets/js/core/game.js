@@ -268,6 +268,10 @@ export const Game = {
         h.def.mines = 120;
         h.def.facts = 140;
         h.def.base = { name: "Starbase I", hp: 1000 };
+        h.hasStargate = true;
+        h.stargateMassLimit = 420;
+        h.stargateRange = 900;
+        h.stargateTechLevel = 1;
 
         this.fleets.push(new Fleet({
             id: this.nextFleetId++,
@@ -307,6 +311,10 @@ export const Game = {
             rival.def.mines = 80;
             rival.def.facts = 90;
             rival.def.base = { name: "Ravager Hub", hp: 900 };
+            rival.hasStargate = true;
+            rival.stargateMassLimit = 360;
+            rival.stargateRange = 850;
+            rival.stargateTechLevel = 1;
 
             this.fleets.push(new Fleet({
                 id: this.nextFleetId++,
@@ -792,23 +800,17 @@ export const Game = {
             this.logMsg("This fleet lacks a mine-laying module.", "Command");
             return;
         }
-        if (fleet.dest) {
-            this.logMsg("Fleet must remain stationary to deploy mines.", "Command");
-            return;
-        }
         const units = Math.max(0, Math.min(fleet.mineUnits, Math.floor(mineUnits || fleet.mineUnits)));
         if (units <= 0) {
             this.logMsg("No mine units available to deploy.", "Command");
             return;
         }
         this.orders.push({
-            type: ORDER_TYPES.DEPLOY_MINEFIELD,
+            type: ORDER_TYPES.LAY_MINES,
             issuerId: fleet.owner,
             payload: {
                 fleetId: fleet.id,
-                mineUnitsToDeploy: units,
-                centerX: fleet.x,
-                centerY: fleet.y
+                mineUnitsToDeploy: units
             }
         });
         this.logMsg(`${fleet.name} queued minefield deployment.`, "Command");
@@ -912,7 +914,7 @@ export const Game = {
         }
         this.minefields.forEach(minefield => {
             const visible = this.activeScanners.some(scan => dist(scan, minefield.center) <= scan.r);
-            if (!visible && minefield.ownerEmpireId !== 1) {
+            if (minefield.visibility !== "all" && !visible && minefield.ownerEmpireId !== 1) {
                 return;
             }
             const existing = this.minefieldIntel[1].find(entry => entry.id === minefield.id);

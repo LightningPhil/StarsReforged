@@ -24,6 +24,8 @@ export const calculateDesignStats = (hull, components) => {
     const powerOutput = components.reduce((sum, component) => sum + (component.powerOutput || 0), 0);
     const powerUsage = components.reduce((sum, component) => sum + (component.powerUsage || 0), 0);
     const mineCapacity = sumEffect(components, "mineUnits");
+    const mineLayingCapacity = sumEffect(components, "mineUnits");
+    const mineSweepingStrength = sumEffect(components, "mineSweep");
     const signature = (hull.signature || Math.ceil(hull.baseMass / 20)) + Math.ceil(mass / 120);
 
     const speed = Math.max(1, Math.floor(speedBase - mass / 140));
@@ -50,6 +52,9 @@ export const calculateDesignStats = (hull, components) => {
         powerUsage,
         signature,
         mineCapacity,
+        mineLayingCapacity,
+        mineSweepingStrength,
+        mineHitpoints: armor + structure,
         initiative: speed + Math.floor(sumEffect(components, "initiative")),
         flags: Array.from(flags)
     };

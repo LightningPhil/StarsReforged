@@ -9,7 +9,9 @@ import { VictoryResolver } from "../assets/js/core/victoryResolver.js";
 import { createTechnologyState, resolveResearchForEmpire } from "../assets/js/core/technologyResolver.js";
 import { PCG32 } from "../assets/js/core/rng.js";
 import { buildShipDesign } from "../assets/js/core/shipDesign.js";
+import { Minefield } from "../assets/js/models/minefield.js";
 import { Star, Fleet, Race } from "../assets/js/models/entities.js";
+import { ORDER_TYPES } from "../assets/js/models/orders.js";
 
 const rulesPath = fileURLToPath(new URL("../config/gameRules.json", import.meta.url));
 const rules = JSON.parse(fs.readFileSync(rulesPath, "utf-8"));
@@ -207,12 +209,163 @@ const testResearchProgression = () => {
     assert.ok(techState.fields.WEAP.level > 1, "Weapons tech should advance with sufficient RP");
 };
 
+const testMineDamageDeterminism = () => {
+    const createStateWithMine = () => {
+        const state = createBaseState();
+        const design = createDesign("Runner", "scout", ["ion_drive", "laser_array", "armor_plating"]);
+        const fleet = new Fleet({
+            id: state.nextFleetId++,
+            owner: 1,
+            x: 100,
+            y: 100,
+            name: "Runner",
+            design
+        });
+        fleet.dest = { x: 200, y: 100 };
+        state.fleets.push(fleet);
+        state.minefields.push(new Minefield({
+            id: 1,
+            ownerEmpireId: 2,
+            center: { x: 150, y: 100 },
+            radius: 20,
+            strength: 120,
+            type: "standard",
+            turnCreated: state.turnCount
+        }));
+        return state;
+    };
+    const stateA = createStateWithMine();
+    const stateB = createStateWithMine();
+    const nextA = TurnEngine.processTurn(stateA);
+    const nextB = TurnEngine.processTurn(stateB);
+    const hpA = nextA.fleets.find(fleet => fleet.id === 1)?.mineHitpoints ?? 0;
+    const hpB = nextB.fleets.find(fleet => fleet.id === 1)?.mineHitpoints ?? 0;
+    assert.equal(hpA, hpB, "Minefield transit damage should be deterministic with fixed RNG seed");
+};
+
+const testMinefieldDecay = () => {
+    const state = createBaseState();
+    state.minefields.push(new Minefield({
+        id: 1,
+        ownerEmpireId: 2,
+        center: { x: 100, y: 100 },
+        radius: 10,
+        strength: 100,
+        type: "standard",
+        turnCreated: state.turnCount
+    }));
+    const first = TurnEngine.processTurn(state);
+    const second = TurnEngine.processTurn(first);
+    const strength = second.minefields[0]?.strength || 0;
+    assert.ok(strength < 100, "Minefield strength should decay over multiple turns");
+};
+
+const testStargateMisjumpScaling = () => {
+    const state = createBaseState();
+    const source = state.stars[0];
+    const destination = state.stars[1];
+    source.hasStargate = true;
+    source.stargateRange = 500;
+    source.stargateMassLimit = 100;
+    destination.hasStargate = true;
+    destination.stargateRange = 500;
+    destination.stargateMassLimit = 100;
+
+    const lightDesign = createDesign("Light", "scout", ["ion_drive", "laser_array", "scanner_array"]);
+    const heavyDesign = createDesign("Heavy", "destroyer", ["fusion_burn", "plasma_lance", "laser_array", "armor_plating", "reactor_core"]);
+    const lightFleet = new Fleet({
+        id: state.nextFleetId++,
+        owner: 1,
+        x: source.x,
+        y: source.y,
+        name: "Light",
+        design: lightDesign
+    });
+    const heavyFleet = new Fleet({
+        id: state.nextFleetId++,
+        owner: 1,
+        x: source.x,
+        y: source.y,
+        name: "Heavy",
+        design: heavyDesign
+    });
+    state.fleets.push(lightFleet, heavyFleet);
+
+    const iterations = 12;
+    let lightLosses = 0;
+    let heavyLosses = 0;
+    for (let i = 0; i < iterations; i++) {
+        const trial = createBaseState();
+        const src = trial.stars[0];
+        const dst = trial.stars[1];
+        src.hasStargate = true;
+        src.stargateRange = 500;
+        src.stargateMassLimit = 120;
+        dst.hasStargate = true;
+        dst.stargateRange = 500;
+        dst.stargateMassLimit = 120;
+        const light = new Fleet({
+            id: trial.nextFleetId++,
+            owner: 1,
+            x: src.x,
+            y: src.y,
+            name: "Light",
+            design: lightDesign
+        });
+        const heavy = new Fleet({
+            id: trial.nextFleetId++,
+            owner: 1,
+            x: src.x,
+            y: src.y,
+            name: "Heavy",
+            design: heavyDesign
+        });
+        trial.fleets.push(light, heavy);
+        trial.orders = [
+            {
+                type: ORDER_TYPES.STARGATE_JUMP,
+                issuerId: 1,
+                payload: { fleetId: light.id, sourcePlanetId: src.id, destinationPlanetId: dst.id }
+            },
+            {
+                type: ORDER_TYPES.STARGATE_JUMP,
+                issuerId: 1,
+                payload: { fleetId: heavy.id, sourcePlanetId: src.id, destinationPlanetId: dst.id }
+            }
+        ];
+        const resolved = TurnEngine.processTurn(trial);
+        if (!resolved.fleets.find(fleet => fleet.id === light.id)) {
+            lightLosses += 1;
+        }
+        if (!resolved.fleets.find(fleet => fleet.id === heavy.id)) {
+            heavyLosses += 1;
+        }
+    }
+    assert.ok(heavyLosses >= lightLosses, "Heavier fleets should misjump more often than lighter fleets");
+};
+
+const testInvalidOrderRejection = () => {
+    const state = createBaseState();
+    state.stars[0].hasStargate = false;
+    state.orders = [{
+        type: ORDER_TYPES.STARGATE_JUMP,
+        issuerId: 1,
+        payload: { fleetId: 999, sourcePlanetId: 0, destinationPlanetId: 1 }
+    }];
+    const next = TurnEngine.processTurn(state);
+    assert.ok(next.orderErrors.length > 0, "Invalid orders should be rejected");
+};
+
 try {
     testAIDecisionLegality();
     testVictoryConditions();
     testScoreCalculation();
     testHeadlessSimulation();
     testResearchProgression();
+    testMineDamageDeterminism();
+    testMinefieldDecay();
+    testStargateMisjumpScaling();
+    testInvalidOrderRejection();
     console.log("All tests passed.");
 } catch (error) {
     console.error("Test failure:", error);

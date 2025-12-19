@@ -1,5 +1,4 @@
 import { ORDER_TYPES } from "../models/orders.js";
-import { Minefield } from "../models/minefield.js";
 import {
     adjustAllocationForField,
     getTechnologyModifiers,
@@ -85,57 +84,90 @@ const resolveBuildShips = (state, order) => {
     star.queue = { type: "ship", bp: blueprint, cost: adjustedCost, done: 0, owner: order.issuerId };
 };
 
-const resolveDeployMinefield = (state, order) => {
+const resolveLayMines = (state, order) => {
     const fleet = getFleetById(state, order.payload?.fleetId);
     const mineUnitsToDeploy = Math.max(0, Math.floor(order.payload?.mineUnitsToDeploy || 0));
     if (!fleet || fleet.owner !== order.issuerId) {
-        logOrderError(state, `Invalid DEPLOY_MINEFIELD order from ${order.issuerId}.`);
+        logOrderError(state, `Invalid LAY_MINES order from ${order.issuerId}.`);
         return;
     }
-    if (fleet.dest) {
-        logOrderError(state, `Fleet ${fleet.id} must be stationary to deploy minefields.`);
+    if (fleet.mineLayingCapacity <= 0) {
+        logOrderError(state, `Fleet ${fleet.id} lacks mine-laying capacity.`);
         return;
     }
-    if (!fleet.design.flags.includes("minelayer")) {
-        logOrderError(state, `Fleet ${fleet.id} lacks a minelayer module.`);
-        return;
-    }
-    if (mineUnitsToDeploy <= 0 || mineUnitsToDeploy > fleet.mineUnits) {
+    const maxDeploy = Math.min(fleet.mineUnits, fleet.mineLayingCapacity);
+    if (mineUnitsToDeploy <= 0 || mineUnitsToDeploy > maxDeploy) {
         logOrderError(state, `Fleet ${fleet.id} has insufficient mine units.`);
         return;
     }
-    const centerX = order.payload?.centerX ?? fleet.x;
-    const centerY = order.payload?.centerY ?? fleet.y;
-    if (!Number.isFinite(centerX) || !Number.isFinite(centerY)) {
-        logOrderError(state, `Invalid DEPLOY_MINEFIELD center for fleet ${fleet.id}.`);
+    if (!state.minefieldLayingOrders) {
+        state.minefieldLayingOrders = [];
+    }
+    state.minefieldLayingOrders.push({
+        fleetId: fleet.id,
+        mineUnitsToDeploy,
+        type: order.payload?.type || "standard"
+    });
+};
+
+const resolveSweepMines = (state, order) => {
+    const fleet = getFleetById(state, order.payload?.fleetId);
+    const minefieldId = order.payload?.minefieldId;
+    if (!fleet || fleet.owner !== order.issuerId) {
+        logOrderError(state, `Invalid SWEEP_MINES order from ${order.issuerId}.`);
         return;
     }
-    const radiusPerUnit = state.rules?.minefields?.radiusPerUnit ?? 0.6;
-    const radius = Math.max(20, Math.floor(Math.sqrt(mineUnitsToDeploy) * 6 + mineUnitsToDeploy * radiusPerUnit));
-    const minefieldId = state.minefields.reduce((max, field) => Math.max(max, field.id), 0) + 1;
-    const newField = new Minefield({
-        id: minefieldId,
-        ownerEmpireId: fleet.owner,
-        center: { x: centerX, y: centerY },
-        radius,
-        strength: mineUnitsToDeploy,
-        type: "standard",
-        turnCreated: state.turnCount
-    });
-    const existing = state.minefields.find(field => field.ownerEmpireId === fleet.owner && (
-        Math.hypot(field.center.x - centerX, field.center.y - centerY) <= field.radius + radius
-    ));
-    if (existing) {
-        const totalStrength = existing.strength + newField.strength;
-        const weightedX = (existing.center.x * existing.strength + newField.center.x * newField.strength) / totalStrength;
-        const weightedY = (existing.center.y * existing.strength + newField.center.y * newField.strength) / totalStrength;
-        existing.center = { x: weightedX, y: weightedY };
-        existing.strength = totalStrength;
-        existing.radius = Math.sqrt(existing.radius * existing.radius + radius * radius);
-    } else {
-        state.minefields.push(newField);
+    if (fleet.mineSweepingStrength <= 0) {
+        logOrderError(state, `Fleet ${fleet.id} lacks mine-sweeping capability.`);
+        return;
     }
-    fleet.mineUnits -= mineUnitsToDeploy;
+    if (!Number.isFinite(minefieldId)) {
+        logOrderError(state, `Invalid SWEEP_MINES target for fleet ${fleet.id}.`);
+        return;
+    }
+    if (!state.minefieldSweepOrders) {
+        state.minefieldSweepOrders = [];
+    }
+    state.minefieldSweepOrders.push({ fleetId: fleet.id, minefieldId });
+};
+
+const resolveStargateJump = (state, order) => {
+    const fleet = getFleetById(state, order.payload?.fleetId);
+    const sourcePlanetId = order.payload?.sourcePlanetId;
+    const destinationPlanetId = order.payload?.destinationPlanetId;
+    if (!fleet || fleet.owner !== order.issuerId) {
+        logOrderError(state, `Invalid STARGATE_JUMP order from ${order.issuerId}.`);
+        return;
+    }
+    const source = getStarById(state, sourcePlanetId);
+    const destination = getStarById(state, destinationPlanetId);
+    if (!source || !destination) {
+        logOrderError(state, `Invalid STARGATE_JUMP endpoint for fleet ${fleet.id}.`);
+        return;
+    }
+    if (!source.hasStargate || !destination.hasStargate) {
+        logOrderError(state, `Stargate missing for fleet ${fleet.id}.`);
+        return;
+    }
+    const dx = destination.x - source.x;
+    const dy = destination.y - source.y;
+    const distance = Math.hypot(dx, dy);
+    if (distance > source.stargateRange) {
+        logOrderError(state, `Destination out of range for fleet ${fleet.id}.`);
+        return;
+    }
+    if (!Number.isFinite(source.stargateMassLimit) || source.stargateMassLimit <= 0) {
+        logOrderError(state, `Stargate mass limit unavailable for fleet ${fleet.id}.`);
+        return;
+    }
+    if (Math.hypot(fleet.x - source.x, fleet.y - source.y) > 12) {
+        logOrderError(state, `Fleet ${fleet.id} must be at source stargate to jump.`);
+        return;
+    }
+    if (!state.stargateOrders) {
+        state.stargateOrders = [];
+    }
+    state.stargateOrders.push({ fleetId: fleet.id, sourcePlanetId, destinationPlanetId });
 };
 
 const resolveResearch = (state, order) => {
@@ -182,7 +214,14 @@ export const OrderResolver = {
                     resolveResearch(state, order);
                     break;
                 case ORDER_TYPES.DEPLOY_MINEFIELD:
-                    resolveDeployMinefield(state, order);
+                case ORDER_TYPES.LAY_MINES:
+                    resolveLayMines(state, order);
+                    break;
+                case ORDER_TYPES.SWEEP_MINES:
+                    resolveSweepMines(state, order);
+                    break;
+                case ORDER_TYPES.STARGATE_JUMP:
+                    resolveStargateJump(state, order);
                     break;
                 default:
                     logOrderError(state, `Unknown order type ${order.type}.`);

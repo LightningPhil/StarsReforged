@@ -20,10 +20,11 @@ export const DEFAULT_RULES = {
         }
     },
     minefields: {
-        maxMineDamage: 24,
-        decayFactor: 0.5,
-        turnDecay: 0.98,
-        radiusPerUnit: 0.6
+        types: {
+            standard: { sweepResistance: 1.0, damageMultiplier: 1.0, decayRate: 0.05 },
+            heavy: { sweepResistance: 1.5, damageMultiplier: 1.25, decayRate: 0.03 },
+            smart: { sweepResistance: 2.0, damageMultiplier: 1.5, decayRate: 0.02 }
+        }
     },
     hulls: []
 };
