@@ -26,25 +26,28 @@ class Star {
 }
 
 class ShipDesign {
-    constructor({ name, hull, engine, weapon, shield, special }) {
+    constructor({ designId, name, hullId, components, finalStats, cost }) {
+        this.designId = designId;
         this.name = name;
-        this.hull = hull;
-        this.engine = engine;
-        this.weapon = weapon;
-        this.shield = shield;
-        this.special = special;
-        this.cost = hull.cost + engine.cost + weapon.cost + shield.cost + special.cost;
-        this.mass = hull.mass + (special.mass || 0);
-        this.fuel = Math.floor(hull.baseFuel + engine.power * 40);
-        this.range = Math.floor(engine.scan + hull.baseFuel * 0.4);
-        this.speed = Math.max(1, Math.floor(engine.power - hull.mass / 120));
-        this.bv = weapon.dmg * 2 + (shield.dmg || 0);
-        this.flags = special.flags || [];
-        this.attack = weapon.dmg;
-        this.defense = shield.dmg || 0;
-        this.shields = Math.max(0, Math.floor((shield.dmg || 0) * 2));
-        this.hull = Math.max(50, hull.mass * 2);
-        this.initiative = engine.power;
+        this.hullId = hullId;
+        this.components = components;
+        this.finalStats = finalStats;
+        this.cost = cost;
+        this.mass = finalStats.mass;
+        this.armor = finalStats.armor;
+        this.structure = finalStats.structure;
+        this.speed = finalStats.speed;
+        this.attack = finalStats.attack;
+        this.defense = finalStats.defense;
+        this.range = finalStats.range;
+        this.fuel = finalStats.fuel;
+        this.shields = finalStats.shields;
+        this.powerOutput = finalStats.powerOutput;
+        this.powerUsage = finalStats.powerUsage;
+        this.signature = finalStats.signature;
+        this.mineCapacity = finalStats.mineCapacity;
+        this.initiative = finalStats.initiative;
+        this.flags = finalStats.flags || [];
     }
 }
 
@@ -56,9 +59,14 @@ class Fleet {
         this.y = y;
         this.name = name;
         this.design = design;
+        this.designId = design.designId;
         this.fuel = design.fuel;
         this.dest = null;
-        this.hp = 100 + design.bv;
+        this.armor = design.armor;
+        this.structure = design.structure;
+        this.shields = design.shields;
+        this.mineUnits = design.mineCapacity || 0;
+        this.hp = this.armor + this.structure + this.shields;
     }
 
     get speed() {
@@ -67,15 +75,6 @@ class Fleet {
 
     get scan() {
         return this.design.range;
-    }
-}
-
-class Minefield {
-    constructor({ x, y, radius, owner }) {
-        this.x = x;
-        this.y = y;
-        this.radius = radius;
-        this.owner = owner;
     }
 }
 
@@ -113,4 +112,4 @@ class Race {
     }
 }
 
-export { Star, ShipDesign, Fleet, Minefield, ResourcePacket, Message, Race };
+export { Star, ShipDesign, Fleet, ResourcePacket, Message, Race };

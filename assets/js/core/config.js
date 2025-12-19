@@ -18,7 +18,14 @@ export const DEFAULT_RULES = {
             credits: 800,
             mineralStock: { i: 1500, b: 1000, g: 1000 }
         }
-    }
+    },
+    minefields: {
+        maxMineDamage: 24,
+        decayFactor: 0.5,
+        turnDecay: 0.98,
+        radiusPerUnit: 0.6
+    },
+    hulls: []
 };
 
 export const DEFAULT_TECH_FIELDS = {
@@ -84,6 +91,8 @@ export const loadConfig = async () => {
             ...rules,
             research: { ...DEFAULT_RULES.research, ...(rules?.research || {}) },
             victory: { ...DEFAULT_RULES.victory, ...(rules?.victory || {}) },
+            minefields: { ...DEFAULT_RULES.minefields, ...(rules?.minefields || {}) },
+            hulls: rules?.hulls?.length ? rules.hulls : DEFAULT_RULES.hulls,
             technologyFields: technologyFields?.fields?.length ? technologyFields.fields : DEFAULT_TECH_FIELDS.fields
         },
         ai: { ...DEFAULT_AI_CONFIG, ...ai, difficulty: { ...DEFAULT_AI_CONFIG.difficulty, ...(ai?.difficulty || {}) } }

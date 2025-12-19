@@ -18,5 +18,68 @@
       "credits": 800,
       "mineralStock": { "i": 1500, "b": 1000, "g": 1000 }
     }
-  }
+  },
+  "minefields": {
+    "maxMineDamage": 24,
+    "decayFactor": 0.5,
+    "turnDecay": 0.98,
+    "radiusPerUnit": 0.6
+  },
+  "hulls": [
+    {
+      "id": "scout",
+      "name": "Scout",
+      "baseMass": 40,
+      "maxMass": 90,
+      "armor": 25,
+      "structure": 60,
+      "signature": 4,
+      "cost": 50,
+      "slotLayout": { "engine": 1, "weapon": 1, "utility": 1 }
+    },
+    {
+      "id": "frigate",
+      "name": "Frigate",
+      "baseMass": 80,
+      "maxMass": 160,
+      "armor": 60,
+      "structure": 110,
+      "signature": 6,
+      "cost": 140,
+      "slotLayout": { "engine": 1, "weapon": 1, "utility": 2 }
+    },
+    {
+      "id": "destroyer",
+      "name": "Destroyer",
+      "baseMass": 140,
+      "maxMass": 260,
+      "armor": 110,
+      "structure": 200,
+      "signature": 8,
+      "cost": 280,
+      "slotLayout": { "engine": 1, "weapon": 2, "utility": 2 }
+    },
+    {
+      "id": "cruiser",
+      "name": "Cruiser",
+      "baseMass": 220,
+      "maxMass": 400,
+      "armor": 180,
+      "structure": 320,
+      "signature": 10,
+      "cost": 520,
+      "slotLayout": { "engine": 1, "weapon": 3, "utility": 2 }
+    },
+    {
+      "id": "battleship",
+      "name": "Battleship",
+      "baseMass": 360,
+      "maxMass": 680,
+      "armor": 320,
+      "structure": 520,
+      "signature": 14,
+      "cost": 980,
+      "slotLayout": { "engine": 1, "weapon": 4, "utility": 3 }
+    }
+  ]
 }

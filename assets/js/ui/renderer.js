@@ -12,6 +12,8 @@ export const Renderer = {
     ctx: document.getElementById('galaxy-canvas').getContext('2d'),
     cam: { x: 1600, y: 1600, zoom: 1, dirty: true },
     time: 0,
+    hoverMinefield: null,
+    tooltip: document.getElementById('minefield-tooltip'),
 
     init: function() {
         window.addEventListener('resize', this.resize.bind(this));
@@ -49,6 +51,29 @@ export const Renderer = {
                 Game.fleets[Game.selection.id].dest = { x: Math.round(w.x), y: Math.round(w.y) };
                 Game.logMsg("Fleet course plotted.", "Command");
                 ui.updateComms();
+            }
+        });
+        this.cvs.addEventListener('mousemove', e => {
+            const w = this.screenToWorld(e.clientX, e.clientY);
+            const knownFields = Game.minefieldIntel?.[1] || [];
+            const hit = knownFields.find(field => dist(field.center, w) <= field.radius);
+            this.hoverMinefield = hit || null;
+            if (this.tooltip) {
+                if (hit) {
+                    this.tooltip.style.opacity = '1';
+                    this.tooltip.style.left = `${e.clientX + 12}px`;
+                    this.tooltip.style.top = `${e.clientY + 12}px`;
+                    const ownerLabel = hit.ownerEmpireId === 1 ? 'Friendly' : (hit.ownerEmpireId ? 'Hostile' : 'Unknown');
+                    this.tooltip.innerHTML = `<div class=\"tip-title\">Minefield</div><div>Owner: ${ownerLabel}</div><div>Radius: ${Math.floor(hit.radius)} ly</div><div>Strength: ${hit.estimatedStrength}</div>`;
+                } else {
+                    this.tooltip.style.opacity = '0';
+                }
+            }
+        });
+        this.cvs.addEventListener('mouseleave', () => {
+            this.hoverMinefield = null;
+            if (this.tooltip) {
+                this.tooltip.style.opacity = '0';
             }
         });
         this.cvs.addEventListener('wheel', e => {
@@ -196,12 +221,19 @@ export const Renderer = {
     },
 
     drawMinefields: function(ctx) {
-        ctx.strokeStyle = '#ff005555';
-        ctx.lineWidth = 1;
-        Game.minefields.forEach(m => {
+        const knownFields = Game.minefieldIntel?.[1] || [];
+        knownFields.forEach(field => {
+            const isFriendly = field.ownerEmpireId === 1;
+            const isHostile = Boolean(field.ownerEmpireId && field.ownerEmpireId !== 1);
+            const baseColor = isFriendly ? '0, 240, 255' : (isHostile ? '255, 0, 85' : '180, 180, 200');
+            const flicker = 0.5 + Math.sin(this.time * 16 + field.id) * 0.2;
+            ctx.strokeStyle = `rgba(${baseColor}, ${0.35 + flicker * 0.35})`;
+            ctx.lineWidth = 1.2;
+            ctx.setLineDash([6, 6]);
             ctx.beginPath();
-            ctx.arc(m.x, m.y, m.radius, 0, Math.PI * 2);
+            ctx.arc(field.center.x, field.center.y, field.radius, 0, Math.PI * 2);
             ctx.stroke();
+            ctx.setLineDash([]);
         });
     },
 

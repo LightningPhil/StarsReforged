@@ -1,4 +1,5 @@
-import { Fleet, Message, Minefield, ResourcePacket, Star } from "../models/entities.js";
+import { Fleet, Message, ResourcePacket, Star } from "../models/entities.js";
+import { Minefield } from "../models/minefield.js";
 import { dist, intSqrt } from "./utils.js";
 import { CombatResolver } from "./combatResolver.js";
 import { OrderResolver } from "./orderResolver.js";
@@ -33,6 +34,10 @@ const cloneFleet = (fleet) => {
     clone.fuel = fleet.fuel;
     clone.dest = fleet.dest ? { ...fleet.dest } : null;
     clone.hp = fleet.hp;
+    clone.armor = fleet.armor;
+    clone.structure = fleet.structure;
+    clone.shields = fleet.shields;
+    clone.mineUnits = fleet.mineUnits;
     clone.colonize = fleet.colonize || false;
     return clone;
 };
@@ -68,8 +73,14 @@ const cloneGameState = (state) => ({
     fleets: state.fleets.map(cloneFleet),
     packets: state.packets.map(clonePacket),
     minefields: state.minefields.map(cloneMinefield),
-    designs: state.designs,
-    aiDesigns: state.aiDesigns,
+    shipDesigns: state.shipDesigns ? Object.fromEntries(Object.entries(state.shipDesigns).map(([id, designs]) => ([
+        id,
+        designs.map(design => ({ ...design, finalStats: { ...design.finalStats } }))
+    ]))) : {},
+    minefieldIntel: state.minefieldIntel ? Object.fromEntries(Object.entries(state.minefieldIntel).map(([id, intel]) => ([
+        id,
+        intel.map(record => ({ ...record, center: { ...record.center } }))
+    ]))) : {},
     messages: state.messages.map(cloneMessage),
     battles: state.battles.slice(),
     sectorScans: state.sectorScans.map(scan => ({ ...scan })),
@@ -119,8 +130,87 @@ const getFleetScanRange = (state, fleet) => {
     return Math.floor(fleet.design.range * modifiers.shipRange);
 };
 
+const lineIntersectsCircle = (start, end, center, radius) => {
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const fx = start.x - center.x;
+    const fy = start.y - center.y;
+    const a = dx * dx + dy * dy;
+    if (a === 0) {
+        return dist(start, center) <= radius;
+    }
+    const b = 2 * (fx * dx + fy * dy);
+    const c = (fx * fx + fy * fy) - radius * radius;
+    const discriminant = b * b - 4 * a * c;
+    if (discriminant < 0) {
+        return false;
+    }
+    const sqrtD = Math.sqrt(discriminant);
+    const t1 = (-b - sqrtD) / (2 * a);
+    const t2 = (-b + sqrtD) / (2 * a);
+    return (t1 >= 0 && t1 <= 1) || (t2 >= 0 && t2 <= 1);
+};
+
+const rememberMinefield = (state, empireId, minefield, knownOwner = false) => {
+    if (!state.minefieldIntel) {
+        state.minefieldIntel = {};
+    }
+    if (!state.minefieldIntel[empireId]) {
+        state.minefieldIntel[empireId] = [];
+    }
+    const intel = state.minefieldIntel[empireId];
+    const existing = intel.find(entry => entry.id === minefield.id);
+    const payload = {
+        id: minefield.id,
+        center: { ...minefield.center },
+        radius: minefield.radius,
+        estimatedStrength: Math.ceil(minefield.strength),
+        ownerEmpireId: knownOwner ? minefield.ownerEmpireId : null,
+        lastSeenTurn: state.turnCount
+    };
+    if (existing) {
+        Object.assign(existing, payload);
+        return;
+    }
+    intel.push(payload);
+};
+
+const applyMinefieldDamage = (state, fleet, minefield) => {
+    const rules = state.rules?.minefields || {};
+    const maxMineDamage = rules.maxMineDamage ?? 24;
+    const decayFactor = rules.decayFactor ?? 0.5;
+    const density = minefield.density;
+    const chanceToHit = Math.min(1, Math.max(0, density * (fleet.design.signature || 1)));
+    const roll = state.rng.nextInt(10000) / 10000;
+    if (roll > chanceToHit) {
+        return false;
+    }
+    const damage = 1 + state.rng.nextInt(maxMineDamage);
+    let remaining = damage;
+    if (fleet.armor > 0) {
+        const absorbed = Math.min(fleet.armor, remaining);
+        fleet.armor -= absorbed;
+        remaining -= absorbed;
+    }
+    if (remaining > 0) {
+        fleet.structure -= remaining;
+    }
+    fleet.hp = Math.max(0, fleet.armor + fleet.structure + fleet.shields);
+    minefield.strength = Math.max(0, minefield.strength - damage * decayFactor);
+    if (state.turnEvents) {
+        state.turnEvents.push({
+            type: "MINEFIELD_HIT",
+            fleetId: fleet.id,
+            minefieldId: minefield.id,
+            damage
+        });
+    }
+    return fleet.structure <= 0;
+};
+
 const resolveMovement = (state) => {
     const nextPositions = new Map();
+    const destroyedFleets = new Set();
     state.fleets
         .slice()
         .sort((a, b) => a.id - b.id)
@@ -136,7 +226,7 @@ const resolveMovement = (state) => {
                 return;
             }
             const move = stepToward(fleet, fleet.dest.x, fleet.dest.y, speed);
-            nextPositions.set(fleet.id, { ...move, fuelUse });
+            nextPositions.set(fleet.id, { ...move, fuelUse, start: { x: fleet.x, y: fleet.y } });
         });
 
     state.fleets.forEach(fleet => {
@@ -144,6 +234,24 @@ const resolveMovement = (state) => {
         if (!move) {
             return;
         }
+        const end = { x: move.x, y: move.y };
+        const path = { start: move.start, end };
+        state.minefields
+            .slice()
+            .sort((a, b) => a.id - b.id)
+            .forEach(minefield => {
+                if (fleet.owner === minefield.ownerEmpireId) {
+                    return;
+                }
+                if (!lineIntersectsCircle(path.start, path.end, minefield.center, minefield.radius)) {
+                    return;
+                }
+                const destroyed = applyMinefieldDamage(state, fleet, minefield);
+                rememberMinefield(state, fleet.owner, minefield, false);
+                if (destroyed) {
+                    destroyedFleets.add(fleet.id);
+                }
+            });
         fleet.x = move.x;
         fleet.y = move.y;
         if (move.arrived) {
@@ -153,6 +261,9 @@ const resolveMovement = (state) => {
             fleet.fuel = Math.max(0, fleet.fuel - move.fuelUse);
         }
     });
+    if (destroyedFleets.size) {
+        state.fleets = state.fleets.filter(fleet => !destroyedFleets.has(fleet.id));
+    }
 };
 
 const resolveCombat = (state) => {
@@ -306,6 +417,23 @@ const resolveVisibility = (state) => {
                 star.visible = false;
             }
         });
+
+    state.minefields.forEach(minefield => {
+        const visible = state.activeScanners.some(scan => dist(scan, minefield.center) <= scan.r);
+        if (visible || minefield.ownerEmpireId === 1) {
+            rememberMinefield(state, 1, minefield, true);
+        }
+    });
+};
+
+const resolveMinefieldDecay = (state) => {
+    const decayRate = state.rules?.minefields?.turnDecay ?? 0.98;
+    state.minefields = state.minefields
+        .map(field => {
+            field.strength *= decayRate;
+            return field;
+        })
+        .filter(field => field.strength >= 1);
 };
 
 const resolveColonization = (state) => {
@@ -350,6 +478,7 @@ export const TurnEngine = {
         resolveProduction(state);
         resolvePopulation(state);
         resolveVisibility(state);
+        resolveMinefieldDecay(state);
 
         state.orders = [];
         state.turnEvents.push({ type: "TURN_COMPLETE", turn: state.turnCount });
