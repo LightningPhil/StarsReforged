@@ -63,12 +63,12 @@ const resolveBuildShips = (state, order) => {
         logOrderError(state, `Star ${star.id} already has a build queue.`);
         return;
     }
-    const bankKey = order.issuerId === 1 ? "credits" : "aiCredits";
-    if (state[bankKey] < blueprint.cost) {
+    const economy = state.economy?.[order.issuerId];
+    if (!economy || economy.credits < blueprint.cost) {
         logOrderError(state, `Insufficient credits to build ${blueprint.name}.`);
         return;
     }
-    state[bankKey] -= blueprint.cost;
+    economy.credits -= blueprint.cost;
     star.queue = { type: "ship", bp: blueprint, cost: blueprint.cost, done: 0, owner: order.issuerId };
 };
 

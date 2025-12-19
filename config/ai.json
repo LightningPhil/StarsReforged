@@ -1,0 +1,22 @@
+{
+  "aiPlayers": [2],
+  "defaultDifficulty": "normal",
+  "maxTurnTimeMs": 100,
+  "difficulty": {
+    "easy": {
+      "aggression": 0.3,
+      "riskTolerance": 0.2,
+      "lookaheadDepth": 1
+    },
+    "normal": {
+      "aggression": 0.6,
+      "riskTolerance": 0.5,
+      "lookaheadDepth": 2
+    },
+    "hard": {
+      "aggression": 0.85,
+      "riskTolerance": 0.8,
+      "lookaheadDepth": 3
+    }
+  }
+}
