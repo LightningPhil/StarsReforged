@@ -2,6 +2,7 @@ import { DB } from "../data/db.js";
 import { Fleet, Message, Minefield, Race, ResourcePacket, ShipDesign, Star } from "../models/entities.js";
 import { PCG32 } from "./rng.js";
 import { dist, intSqrt } from "./utils.js";
+import { TurnEngine } from "./turnEngine.js";
 
 let ui = null;
 let renderer = null;
@@ -33,6 +34,10 @@ export const Game = {
     battles: [],
     sectorScans: [],
     logs: [],
+    orders: [],
+    combatReports: [],
+    turnHistory: [],
+    turnEvents: [],
     turnHash: 0n,
     empireCache: { taxTotal: 0, industrialOutput: 0 },
     research: {
@@ -243,28 +248,15 @@ export const Game = {
             this.logMsg("Victory declared. No further turns possible.", "System", "high");
             return;
         }
-        this.year++;
-        this.turnCount++;
-        this.startTurnLog();
-
-        const seeded = this.hashTurnSeed(this.turnHash, BigInt(this.turnCount));
+        const nextTurn = this.turnCount + 1;
+        const seeded = this.hashTurnSeed(this.turnHash, BigInt(nextTurn));
         this.rngSeed = seeded;
         this.rng = new PCG32(seeded, 54n);
-        this.addEvent(`Turn ${this.year} initiated.`);
-
-        this.validateOrders();
-        this.processPackets();
-        this.processFleets();
-        this.processBombing();
-        this.processPopulationGrowth();
-        this.processProduction();
-        this.processResearch();
-        this.processIntelligence();
-        this.checkVictory();
+        const nextState = TurnEngine.processTurn(this);
+        this.applyState(nextState);
 
         this.processAI();
         this.updateVisibility();
-        this.finalizeTurnLog();
         renderer.cam.dirty = true;
         ui.updateHeader();
         ui.updateSide();
@@ -273,6 +265,33 @@ export const Game = {
         ui.updateResearch();
         ui.updateComms();
         this.playSound(140, 0.08);
+    },
+
+    applyState: function(nextState) {
+        this.turnCount = nextState.turnCount;
+        this.year = nextState.year;
+        this.credits = nextState.credits;
+        this.minerals = nextState.minerals;
+        this.mineralStock = nextState.mineralStock;
+        this.aiCredits = nextState.aiCredits;
+        this.aiMinerals = nextState.aiMinerals;
+        this.aiMineralStock = nextState.aiMineralStock;
+        this.stars = nextState.stars;
+        this.fleets = nextState.fleets;
+        this.packets = nextState.packets;
+        this.minefields = nextState.minefields;
+        this.messages = nextState.messages;
+        this.battles = nextState.battles;
+        this.sectorScans = nextState.sectorScans;
+        this.logs = nextState.logs;
+        this.empireCache = nextState.empireCache;
+        this.research = nextState.research;
+        this.nextFleetId = nextState.nextFleetId;
+        this.nextPacketId = nextState.nextPacketId;
+        this.orders = nextState.orders;
+        this.combatReports = nextState.combatReports;
+        this.turnHistory = nextState.turnHistory;
+        this.turnEvents = nextState.turnEvents;
     },
 
     validateOrders: function() {
