@@ -41,9 +41,10 @@ const cloneGameState = (state) => ({
     credits: state.credits,
     minerals: state.minerals,
     mineralStock: { ...state.mineralStock },
-    aiCredits: state.aiCredits,
-    aiMinerals: state.aiMinerals,
-    aiMineralStock: { ...state.aiMineralStock },
+    economy: state.economy ? Object.fromEntries(Object.entries(state.economy).map(([id, entry]) => ([
+        id,
+        { credits: entry.credits, minerals: entry.minerals, mineralStock: { ...entry.mineralStock } }
+    ]))) : {},
     stars: state.stars.map(cloneStar),
     fleets: state.fleets.map(cloneFleet),
     packets: state.packets.map(clonePacket),
@@ -63,10 +64,11 @@ const cloneGameState = (state) => ({
     nextPacketId: state.nextPacketId,
     race: state.race,
     diplomacy: { ...state.diplomacy, status: { ...state.diplomacy.status } },
+    players: state.players ? state.players.map(player => ({ ...player })) : [],
     orders: state.orders ? state.orders.slice() : [],
     combatReports: state.combatReports ? state.combatReports.slice() : [],
     turnHistory: state.turnHistory ? state.turnHistory.slice() : [],
-    turnEvents: [],
+    turnEvents: state.turnEvents ? state.turnEvents.slice() : [],
     orderErrors: []
 });
 
@@ -161,18 +163,18 @@ const resolveProduction = (state) => {
             const bGain = Math.floor((star.def.mines * star.mins.b) / 120);
             const gGain = Math.floor((star.def.mines * star.mins.g) / 120);
 
+            const economy = state.economy?.[star.owner];
+            if (!economy) {
+                return;
+            }
             if (star.owner === 1) {
                 taxTotal += income;
                 industrialOutput += star.def.facts;
-                state.mineralStock.i += iGain;
-                state.mineralStock.b += bGain;
-                state.mineralStock.g += gGain;
-            } else if (star.owner === 2) {
-                state.aiCredits += income;
-                state.aiMineralStock.i += iGain;
-                state.aiMineralStock.b += bGain;
-                state.aiMineralStock.g += gGain;
             }
+            economy.credits += income;
+            economy.mineralStock.i += iGain;
+            economy.mineralStock.b += bGain;
+            economy.mineralStock.g += gGain;
 
             if (star.queue) {
                 star.queue.done += star.def.facts;
@@ -201,9 +203,15 @@ const resolveProduction = (state) => {
             }
         });
 
-    state.minerals = state.mineralStock.i + state.mineralStock.b + state.mineralStock.g;
-    state.aiMinerals = state.aiMineralStock.i + state.aiMineralStock.b + state.aiMineralStock.g;
-    state.credits += taxTotal;
+    Object.values(state.economy || {}).forEach(entry => {
+        entry.minerals = entry.mineralStock.i + entry.mineralStock.b + entry.mineralStock.g;
+    });
+    const playerEconomy = state.economy?.[1];
+    if (playerEconomy) {
+        state.credits = playerEconomy.credits;
+        state.mineralStock = { ...playerEconomy.mineralStock };
+        state.minerals = playerEconomy.minerals;
+    }
     state.empireCache = { taxTotal, industrialOutput };
 };
 
@@ -305,7 +313,7 @@ export const TurnEngine = {
         resolveVisibility(state);
 
         state.orders = [];
-        state.turnEvents.push({ type: \"TURN_COMPLETE\", turn: state.turnCount });
+        state.turnEvents.push({ type: "TURN_COMPLETE", turn: state.turnCount });
         return state;
     }
 };

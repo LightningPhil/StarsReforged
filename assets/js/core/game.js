@@ -3,6 +3,9 @@ import { Fleet, Message, Minefield, Race, ResourcePacket, ShipDesign, Star } fro
 import { PCG32 } from "./rng.js";
 import { dist, intSqrt } from "./utils.js";
 import { TurnEngine } from "./turnEngine.js";
+import { AIController } from "../ai/AIController.js";
+import { loadConfig } from "./config.js";
+import { evaluateVictory, resolveDefeats, calculateScores } from "./gameResolution.js";
 
 let ui = null;
 let renderer = null;
@@ -21,9 +24,7 @@ export const Game = {
     credits: 1000,
     minerals: 5000,
     mineralStock: { i: 2000, b: 1500, g: 1500 },
-    aiCredits: 800,
-    aiMinerals: 3500,
-    aiMineralStock: { i: 1500, b: 1000, g: 1000 },
+    economy: {},
     stars: [],
     fleets: [],
     packets: [],
@@ -40,6 +41,12 @@ export const Game = {
     turnEvents: [],
     turnHash: 0n,
     empireCache: { taxTotal: 0, industrialOutput: 0 },
+    players: [],
+    rules: null,
+    aiConfig: null,
+    aiDifficulty: "normal",
+    gameResult: null,
+    scores: [],
     research: {
         field: 0,
         levels: [0, 0, 0, 0, 0, 0],
@@ -72,7 +79,12 @@ export const Game = {
     isGameOver: false,
     currentTurnLog: null,
 
-    init: function() {
+    init: async function() {
+        const configs = await loadConfig();
+        this.rules = configs.rules;
+        this.aiConfig = configs.ai;
+        this.aiDifficulty = configs.ai.defaultDifficulty || "normal";
+        this.setupPlayers();
         this.minerals = this.mineralStock.i + this.mineralStock.b + this.mineralStock.g;
         this.rng = new PCG32(this.rngSeed, 54n);
         this.turnHash = this.hashTurnSeed(this.rngSeed, BigInt(this.turnCount));
@@ -95,12 +107,16 @@ export const Game = {
 
         this.generateGalaxy(80);
         this.seedHomeworld();
-        this.seedRival();
+        this.seedRivals();
 
         this.logMsg("Welcome, Emperor. The sector is uncharted.", "System");
 
-        renderer.init();
-        ui.init();
+        if (renderer?.init) {
+            renderer.init();
+        }
+        if (ui?.init) {
+            ui.init();
+        }
         this.updateVisibility();
     },
 
@@ -122,6 +138,33 @@ export const Game = {
         let hash = this.hashMix(previousHash, turnNumber);
         hash = this.hashMix(hash, 0x94d049bb133111ebn);
         return hash;
+    },
+
+    setupPlayers: function() {
+        const aiPlayers = this.aiConfig?.aiPlayers || [2];
+        this.players = [
+            { id: 1, type: "human", status: "active", eliminatedAtTurn: null },
+            ...aiPlayers.map(id => ({ id, type: "ai", status: "active", eliminatedAtTurn: null }))
+        ];
+
+        const humanStart = this.rules?.startingResources?.human || { credits: 1000, mineralStock: { i: 2000, b: 1500, g: 1500 } };
+        const aiStart = this.rules?.startingResources?.ai || { credits: 800, mineralStock: { i: 1500, b: 1000, g: 1000 } };
+
+        this.economy = {};
+        this.players.forEach(player => {
+            const template = player.type === "human" ? humanStart : aiStart;
+            this.economy[player.id] = {
+                credits: template.credits,
+                mineralStock: { ...template.mineralStock },
+                minerals: template.mineralStock.i + template.mineralStock.b + template.mineralStock.g
+            };
+        });
+        const humanEconomy = this.economy[1];
+        if (humanEconomy) {
+            this.credits = humanEconomy.credits;
+            this.mineralStock = { ...humanEconomy.mineralStock };
+            this.minerals = humanEconomy.minerals;
+        }
     },
 
     startTurnLog: function() {
@@ -206,15 +249,11 @@ export const Game = {
         }));
     },
 
-    seedRival: function() {
-        const rival = this.stars[10];
-        rival.owner = 2;
-        rival.name = "CRIMSON NODE";
-        rival.pop = 40000;
-        rival.def.mines = 80;
-        rival.def.facts = 90;
-        rival.def.base = { name: "Ravager Hub", hp: 900 };
-
+    seedRivals: function() {
+        const aiPlayers = this.players.filter(player => player.type === "ai");
+        if (!aiPlayers.length) {
+            return;
+        }
         const enemyDesign = new ShipDesign({
             name: "Raider",
             hull: DB.hulls[0],
@@ -233,14 +272,28 @@ export const Game = {
         });
         this.aiDesigns = [enemyDesign, enemyColony];
 
-        this.fleets.push(new Fleet({
-            id: this.nextFleetId++,
-            owner: 2,
-            x: rival.x,
-            y: rival.y,
-            name: "Raider Wing",
-            design: enemyDesign
-        }));
+        const availableStars = this.stars.filter(star => !star.owner && star.id !== 0);
+        aiPlayers.forEach((player, index) => {
+            const rival = availableStars[index] || this.stars[10 + index];
+            if (!rival) {
+                return;
+            }
+            rival.owner = player.id;
+            rival.name = index === 0 ? "CRIMSON NODE" : `DIRECTORATE-${player.id}`;
+            rival.pop = 40000;
+            rival.def.mines = 80;
+            rival.def.facts = 90;
+            rival.def.base = { name: "Ravager Hub", hp: 900 };
+
+            this.fleets.push(new Fleet({
+                id: this.nextFleetId++,
+                owner: player.id,
+                x: rival.x,
+                y: rival.y,
+                name: `Raider Wing ${player.id}`,
+                design: enemyDesign
+            }));
+        });
     },
 
     turn: function() {
@@ -252,19 +305,26 @@ export const Game = {
         const seeded = this.hashTurnSeed(this.turnHash, BigInt(nextTurn));
         this.rngSeed = seeded;
         this.rng = new PCG32(seeded, 54n);
+        this.startTurnLog();
+        this.turnEvents = [];
+        this.processAITurns();
         const nextState = TurnEngine.processTurn(this);
         this.applyState(nextState);
-
-        this.processAI();
+        this.resolveEndOfTurn();
         this.updateVisibility();
-        renderer.cam.dirty = true;
-        ui.updateHeader();
-        ui.updateSide();
-        ui.updateEmpire();
-        ui.updateFleets();
-        ui.updateResearch();
-        ui.updateComms();
+        if (renderer) {
+            renderer.cam.dirty = true;
+        }
+        if (ui) {
+            ui.updateHeader();
+            ui.updateSide();
+            ui.updateEmpire();
+            ui.updateFleets();
+            ui.updateResearch();
+            ui.updateComms();
+        }
         this.playSound(140, 0.08);
+        this.finalizeTurnLog();
     },
 
     applyState: function(nextState) {
@@ -273,9 +333,7 @@ export const Game = {
         this.credits = nextState.credits;
         this.minerals = nextState.minerals;
         this.mineralStock = nextState.mineralStock;
-        this.aiCredits = nextState.aiCredits;
-        this.aiMinerals = nextState.aiMinerals;
-        this.aiMineralStock = nextState.aiMineralStock;
+        this.economy = nextState.economy || this.economy;
         this.stars = nextState.stars;
         this.fleets = nextState.fleets;
         this.packets = nextState.packets;
@@ -292,6 +350,13 @@ export const Game = {
         this.combatReports = nextState.combatReports;
         this.turnHistory = nextState.turnHistory;
         this.turnEvents = nextState.turnEvents;
+        this.players = nextState.players || this.players;
+        const humanEconomy = this.economy?.[1];
+        if (humanEconomy) {
+            this.credits = humanEconomy.credits;
+            this.mineralStock = { ...humanEconomy.mineralStock };
+            this.minerals = humanEconomy.minerals;
+        }
     },
 
     validateOrders: function() {
@@ -304,17 +369,17 @@ export const Game = {
             .filter(packet => {
                 const speed = 80;
                 if (this.stepToward(packet, packet.destX, packet.destY, speed)) {
-                if (packet.owner === 1) {
-                    this.mineralStock.i += Math.floor(packet.payload * 0.4);
-                    this.mineralStock.b += Math.floor(packet.payload * 0.3);
-                    this.mineralStock.g += Math.floor(packet.payload * 0.3);
-                    this.minerals = this.mineralStock.i + this.mineralStock.b + this.mineralStock.g;
-                    this.logMsg(`Resource packet delivered to ${this.stars[packet.destId]?.name || 'target'}.`, "Industry");
-                } else if (packet.owner === 2) {
-                    this.aiMineralStock.i += Math.floor(packet.payload * 0.4);
-                    this.aiMineralStock.b += Math.floor(packet.payload * 0.3);
-                    this.aiMineralStock.g += Math.floor(packet.payload * 0.3);
-                    this.aiMinerals = this.aiMineralStock.i + this.aiMineralStock.b + this.aiMineralStock.g;
+                const economy = this.economy?.[packet.owner];
+                if (economy) {
+                    economy.mineralStock.i += Math.floor(packet.payload * 0.4);
+                    economy.mineralStock.b += Math.floor(packet.payload * 0.3);
+                    economy.mineralStock.g += Math.floor(packet.payload * 0.3);
+                    economy.minerals = economy.mineralStock.i + economy.mineralStock.b + economy.mineralStock.g;
+                    if (packet.owner === 1) {
+                        this.mineralStock = { ...economy.mineralStock };
+                        this.minerals = economy.minerals;
+                        this.logMsg(`Resource packet delivered to ${this.stars[packet.destId]?.name || 'target'}.`, "Industry");
+                    }
                 }
                 return false;
                 }
@@ -392,18 +457,18 @@ export const Game = {
                 const bGain = Math.floor((star.def.mines * star.mins.b) / 120);
                 const gGain = Math.floor((star.def.mines * star.mins.g) / 120);
 
+                const economy = this.economy?.[star.owner];
+                if (!economy) {
+                    return;
+                }
                 if (star.owner === 1) {
                     taxTotal += income;
                     industrialOutput += star.def.facts;
-                    this.mineralStock.i += iGain;
-                    this.mineralStock.b += bGain;
-                    this.mineralStock.g += gGain;
-                } else if (star.owner === 2) {
-                    this.aiCredits += income;
-                    this.aiMineralStock.i += iGain;
-                    this.aiMineralStock.b += bGain;
-                    this.aiMineralStock.g += gGain;
                 }
+                economy.credits += income;
+                economy.mineralStock.i += iGain;
+                economy.mineralStock.b += bGain;
+                economy.mineralStock.g += gGain;
 
                 if (star.queue) {
                     star.queue.done += star.def.facts;
@@ -417,10 +482,15 @@ export const Game = {
                 }
             });
 
-        this.minerals = this.mineralStock.i + this.mineralStock.b + this.mineralStock.g;
-        this.aiMinerals = this.aiMineralStock.i + this.aiMineralStock.b + this.aiMineralStock.g;
-
-        this.credits += taxTotal;
+        Object.values(this.economy || {}).forEach(entry => {
+            entry.minerals = entry.mineralStock.i + entry.mineralStock.b + entry.mineralStock.g;
+        });
+        const humanEconomy = this.economy?.[1];
+        if (humanEconomy) {
+            this.credits = humanEconomy.credits;
+            this.mineralStock = { ...humanEconomy.mineralStock };
+            this.minerals = humanEconomy.minerals;
+        }
         this.empireCache = { taxTotal, industrialOutput };
         this.addEvent("Production resolved.");
     },
@@ -442,52 +512,31 @@ export const Game = {
         this.addEvent("Intelligence updates resolved.");
     },
 
-    processAI: function() {
-        const aiStars = this.stars.filter(s => s.owner === 2).sort((a, b) => a.id - b.id);
-        if (!aiStars.length) {
+    processAITurns: function() {
+        const aiPlayers = this.players.filter(player => player.type === "ai" && player.status === "active");
+        if (!aiPlayers.length) {
             return;
         }
-
-        const colonyFleet = this.fleets.find(f => f.owner === 2 && f.design.flags.includes('colonize'));
-        const colonyDesign = this.aiDesigns[1];
-        if (!colonyFleet && colonyDesign) {
-            const buildStar = aiStars.find(s => !s.queue);
-            if (buildStar) {
-                this.queueBuild(buildStar, 1, 2);
-            }
-        }
-
-        const raiderDesign = this.aiDesigns[0];
-        aiStars.filter(s => !s.queue).forEach(star => {
-            if (this.aiCredits > (raiderDesign?.cost || 0) && this.roll(100) < 25) {
-                this.queueBuild(star, 0, 2);
-            }
+        aiPlayers.forEach(player => {
+            const difficulty = this.aiConfig?.difficulty?.[this.aiDifficulty] || this.aiConfig?.difficulty?.normal;
+            const maxTimeMs = this.aiConfig?.maxTurnTimeMs ?? 100;
+            this.turnEvents.push({ type: "AI_TURN_STARTED", playerId: player.id, turn: this.turnCount + 1 });
+            const result = AIController.runTurn(this, player.id, difficulty, { roll: (max) => this.roll(max), maxTimeMs });
+            result.orders.forEach(order => {
+                this.orders.push(order);
+                this.turnEvents.push({ type: "AI_ACTION_TAKEN", playerId: player.id, orderType: order.type, turn: this.turnCount + 1 });
+            });
+            this.turnEvents.push({ type: "AI_TURN_ENDED", playerId: player.id, turn: this.turnCount + 1, intent: result.intent });
         });
 
-        this.fleets
-            .filter(f => f.owner === 2 && !f.dest)
-            .sort((a, b) => a.id - b.id)
-            .forEach(f => {
-            const unowned = this.stars.filter(s => !s.owner).sort((a, b) => a.id - b.id);
-            const enemy = this.stars.filter(s => s.owner === 1).sort((a, b) => a.id - b.id);
-            const pool = unowned.length ? unowned : enemy;
-            if (!pool.length) {
-                return;
-            }
-            const target = pool.reduce((best, star) => {
-                const d = dist(f, star);
-                if (!best || d < best.dist || (d === best.dist && star.id < best.star.id)) {
-                    return { star, dist: d };
-                }
-                return best;
-            }, null);
-            f.dest = { x: target.star.x, y: target.star.y };
-        });
-
-        const playerNear = aiStars.some(star => this.fleets.some(f => f.owner === 1 && dist(f, star) < 200));
+        const playerNear = this.stars
+            .filter(star => star.owner && star.owner !== 1)
+            .some(star => this.fleets.some(f => f.owner === 1 && dist(f, star) < 200));
         if (playerNear && this.turnCount - this.diplomacy.lastWarning > 4) {
             this.diplomacy.lastWarning = this.turnCount;
-            this.diplomacy.status[2] = "Tense";
+            aiPlayers.forEach(player => {
+                this.diplomacy.status[player.id] = "Tense";
+            });
             this.logMsg("Your fleets are encroaching on Directorate territory. Withdraw or face consequences.", "Crimson Directorate", "high", "Ashen Arc");
         }
     },
@@ -556,17 +605,16 @@ export const Game = {
         if (!blueprint) {
             return;
         }
-        const bank = ownerId === 1 ? this.credits : this.aiCredits;
-        if (bank < blueprint.cost) {
+        const economy = this.economy?.[ownerId];
+        if (!economy || economy.credits < blueprint.cost) {
             if (ownerId === 1) {
                 this.logMsg(`Insufficient credits to build ${blueprint.name}.`, "Industry");
             }
             return;
         }
+        economy.credits -= blueprint.cost;
         if (ownerId === 1) {
-            this.credits -= blueprint.cost;
-        } else {
-            this.aiCredits -= blueprint.cost;
+            this.credits = economy.credits;
         }
         star.queue = { type: 'ship', bp: blueprint, cost: blueprint.cost, done: 0, owner: ownerId };
         if (ownerId === 1) {
@@ -586,17 +634,16 @@ export const Game = {
             return;
         }
         const cost = structure.cost * count;
-        const bank = ownerId === 1 ? this.credits : this.aiCredits;
-        if (bank < cost) {
+        const economy = this.economy?.[ownerId];
+        if (!economy || economy.credits < cost) {
             if (ownerId === 1) {
                 this.logMsg(`Insufficient credits to build ${structure.name}.`, "Industry");
             }
             return;
         }
+        economy.credits -= cost;
         if (ownerId === 1) {
-            this.credits -= cost;
-        } else {
-            this.aiCredits -= cost;
+            this.credits = economy.credits;
         }
         star.queue = { type: 'structure', kind, count, cost, done: 0, owner: ownerId };
         if (ownerId === 1) {
@@ -641,15 +688,20 @@ export const Game = {
         }
     },
 
-    checkVictory: function() {
-        const owners = new Set(this.stars.filter(s => s.owner).map(s => s.owner));
-        if (owners.size === 1 && owners.has(1)) {
-            this.isGameOver = true;
-            this.logMsg("All systems unified under your banner. Victory achieved.", "System", "high");
+    resolveEndOfTurn: function() {
+        resolveDefeats(this);
+        this.scores = calculateScores(this, this.rules);
+        const outcome = evaluateVictory(this, this.rules);
+        if (!outcome.isGameOver) {
             return;
         }
-        if (owners.size === 1 && owners.has(2)) {
-            this.isGameOver = true;
+        this.isGameOver = true;
+        this.gameResult = outcome.gameResult;
+        this.turnEvents.push({ type: "GAME_OVER", turn: this.turnCount });
+        this.turnEvents.push({ type: "VICTORY_DECLARED", winnerId: outcome.gameResult.winnerId, reason: outcome.reason });
+        if (outcome.gameResult.winnerId === 1) {
+            this.logMsg("All systems unified under your banner. Victory achieved.", "System", "high");
+        } else {
             this.logMsg("The Crimson Directorate has seized the galaxy. Defeat.", "System", "high");
         }
     },
@@ -711,7 +763,11 @@ export const Game = {
     },
 
     withdrawMinerals: function(amount, ownerId = 1) {
-        const stock = ownerId === 1 ? this.mineralStock : this.aiMineralStock;
+        const economy = this.economy?.[ownerId];
+        if (!economy) {
+            return false;
+        }
+        const stock = economy.mineralStock;
         let remaining = amount;
         const take = (key) => {
             const used = Math.min(stock[key], remaining);
@@ -721,10 +777,10 @@ export const Game = {
         take('i');
         take('b');
         take('g');
+        economy.minerals = stock.i + stock.b + stock.g;
         if (ownerId === 1) {
-            this.minerals = stock.i + stock.b + stock.g;
-        } else {
-            this.aiMinerals = stock.i + stock.b + stock.g;
+            this.mineralStock = { ...stock };
+            this.minerals = economy.minerals;
         }
         return remaining <= 0;
     },

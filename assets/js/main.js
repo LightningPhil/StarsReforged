@@ -10,4 +10,8 @@ bindUIRenderer(Renderer);
 window.Game = Game;
 window.UI = UI;
 
-window.onload = () => Game.init();
+window.onload = () => {
+    Game.init().catch(error => {
+        console.error("Failed to initialize game.", error);
+    });
+};

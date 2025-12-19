@@ -1,0 +1,31 @@
+{
+  "maxTurns": 60,
+  "victoryConditions": {
+    "totalDomination": true,
+    "elimination": true,
+    "turnLimit": true
+  },
+  "scoring": {
+    "starValue": 1200,
+    "resourceValue": 1,
+    "unitValue": 60,
+    "turnEfficiency": {
+      "enabled": false,
+      "value": 5
+    },
+    "aggression": {
+      "enabled": false,
+      "value": 150
+    }
+  },
+  "startingResources": {
+    "human": {
+      "credits": 1000,
+      "mineralStock": { "i": 2000, "b": 1500, "g": 1500 }
+    },
+    "ai": {
+      "credits": 800,
+      "mineralStock": { "i": 1500, "b": 1000, "g": 1000 }
+    }
+  }
+}
