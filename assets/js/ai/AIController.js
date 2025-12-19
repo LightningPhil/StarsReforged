@@ -2,6 +2,27 @@ import { ORDER_TYPES } from "../models/orders.js";
 import { dist } from "../core/utils.js";
 import { buildShipDesign } from "../core/shipDesign.js";
 
+const lineIntersectsCircle = (start, end, center, radius) => {
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const fx = start.x - center.x;
+    const fy = start.y - center.y;
+    const a = dx * dx + dy * dy;
+    if (a === 0) {
+        return dist(start, center) <= radius;
+    }
+    const b = 2 * (fx * dx + fy * dy);
+    const c = (fx * fx + fy * fy) - radius * radius;
+    const discriminant = b * b - 4 * a * c;
+    if (discriminant < 0) {
+        return false;
+    }
+    const sqrtD = Math.sqrt(discriminant);
+    const t1 = (-b - sqrtD) / (2 * a);
+    const t2 = (-b + sqrtD) / (2 * a);
+    return (t1 >= 0 && t1 <= 1) || (t2 >= 0 && t2 <= 1);
+};
+
 const buildAIState = (gameState, playerId) => {
     const ownedStars = gameState.stars.filter(star => star.owner === playerId);
     const neutralStars = gameState.stars.filter(star => !star.owner);
@@ -15,12 +36,24 @@ const buildAIState = (gameState, playerId) => {
         riskScores.set(star.id, risk);
     });
 
+    const visibleMinefields = gameState.minefields.filter(field => {
+        if (field.ownerEmpireId === playerId || field.visibility === "all") {
+            return true;
+        }
+        const starScanner = ownedStars.some(star => dist(star, field.center) <= 260);
+        const fleetScanner = gameState.fleets
+            .filter(fleet => fleet.owner === playerId)
+            .some(fleet => dist(fleet, field.center) <= (fleet.scan || fleet.design.range || 0));
+        return starScanner || fleetScanner;
+    });
+
     return {
         ownedStars,
         neutralStars,
         enemyStars,
         enemyFleets,
         riskScores,
+        visibleMinefields,
         lastKnownEnemyActions: enemyFleets.map(fleet => ({ id: fleet.id, x: fleet.x, y: fleet.y, owner: fleet.owner }))
     };
 };
@@ -59,6 +92,18 @@ const createMoveOrder = (fleet, target, playerId) => ({
     type: ORDER_TYPES.MOVE_FLEET,
     issuerId: playerId,
     payload: { fleetId: fleet.id, dest: { x: target.x, y: target.y } }
+});
+
+const createSweepOrder = (fleet, minefieldId, playerId) => ({
+    type: ORDER_TYPES.SWEEP_MINES,
+    issuerId: playerId,
+    payload: { fleetId: fleet.id, minefieldId }
+});
+
+const createStargateOrder = (fleet, sourceId, destinationId, playerId) => ({
+    type: ORDER_TYPES.STARGATE_JUMP,
+    issuerId: playerId,
+    payload: { fleetId: fleet.id, sourcePlanetId: sourceId, destinationPlanetId: destinationId }
 });
 
 const createBuildOrder = (star, designId, playerId) => ({
@@ -149,6 +194,13 @@ export const AIController = {
             if (Date.now() - startTime > maxTimeMs) {
                 return;
             }
+            const blockingMinefield = aiState.visibleMinefields.find(field => (
+                field.ownerEmpireId !== playerId && dist(fleet, field.center) <= field.radius
+            ));
+            if (blockingMinefield && fleet.mineSweepingStrength > 0) {
+                orders.push(createSweepOrder(fleet, blockingMinefield.id, playerId));
+                return;
+            }
             if (fleet.design.flags.includes("colonize")) {
                 orders.push(createColonizeOrder(fleet, playerId));
             }
@@ -164,7 +216,31 @@ export const AIController = {
             }
             const target = pickTarget(fleet, targetPool, profile.lookaheadDepth, roll);
             if (target) {
-                orders.push(createMoveOrder(fleet, target, playerId));
+                const sourceStar = gameState.stars.find(star => dist(star, fleet) < 12);
+                if (sourceStar?.hasStargate && target.hasStargate) {
+                    const distance = dist(sourceStar, target);
+                    if (distance <= sourceStar.stargateRange && fleet.mass <= sourceStar.stargateMassLimit) {
+                        orders.push(createStargateOrder(fleet, sourceStar.id, target.id, playerId));
+                        return;
+                    }
+                }
+                const unsafe = aiState.visibleMinefields.some(field => (
+                    field.ownerEmpireId !== playerId
+                    && lineIntersectsCircle(fleet, target, field.center, field.radius)
+                ));
+                if (!unsafe || targetPool.length === 1) {
+                    orders.push(createMoveOrder(fleet, target, playerId));
+                    return;
+                }
+                const safeTarget = targetPool.find(candidate => !aiState.visibleMinefields.some(field => (
+                    field.ownerEmpireId !== playerId
+                    && lineIntersectsCircle(fleet, candidate, field.center, field.radius)
+                )));
+                if (safeTarget) {
+                    orders.push(createMoveOrder(fleet, safeTarget, playerId));
+                } else {
+                    orders.push(createMoveOrder(fleet, target, playerId));
+                }
             }
         });
 

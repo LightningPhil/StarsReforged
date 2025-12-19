@@ -4,6 +4,13 @@ import { dist, intSqrt } from "./utils.js";
 import { CombatResolver } from "./combatResolver.js";
 import { OrderResolver } from "./orderResolver.js";
 import {
+    resolveMinefieldDecay,
+    resolveMinefieldLaying,
+    resolveMinefieldSweeping,
+    resolveMinefieldTransitDamage,
+    resolveStargateJumps
+} from "./gameResolution.js";
+import {
     calculateEmpireResearchPoints,
     getTechnologyModifiers,
     getTechnologyStateForEmpire,
@@ -19,6 +26,10 @@ const cloneStar = (star) => {
     clone.visible = star.visible;
     clone.known = star.known;
     clone.snapshot = star.snapshot ? { ...star.snapshot } : null;
+    clone.hasStargate = star.hasStargate;
+    clone.stargateMassLimit = star.stargateMassLimit;
+    clone.stargateRange = star.stargateRange;
+    clone.stargateTechLevel = star.stargateTechLevel;
     return clone;
 };
 
@@ -38,6 +49,10 @@ const cloneFleet = (fleet) => {
     clone.structure = fleet.structure;
     clone.shields = fleet.shields;
     clone.mineUnits = fleet.mineUnits;
+    clone.mineLayingCapacity = fleet.mineLayingCapacity;
+    clone.mineSweepingStrength = fleet.mineSweepingStrength;
+    clone.mineHitpoints = fleet.mineHitpoints;
+    clone.mass = fleet.mass;
     clone.colonize = fleet.colonize || false;
     return clone;
 };
@@ -102,6 +117,10 @@ const cloneGameState = (state) => ({
     combatReports: state.combatReports ? state.combatReports.slice() : [],
     turnHistory: state.turnHistory ? state.turnHistory.slice() : [],
     turnEvents: state.turnEvents ? state.turnEvents.slice() : [],
+    movementPaths: [],
+    minefieldLayingOrders: [],
+    minefieldSweepOrders: [],
+    stargateOrders: [],
     orderErrors: []
 });
 
@@ -130,87 +149,8 @@ const getFleetScanRange = (state, fleet) => {
     return Math.floor(fleet.design.range * modifiers.shipRange);
 };
 
-const lineIntersectsCircle = (start, end, center, radius) => {
-    const dx = end.x - start.x;
-    const dy = end.y - start.y;
-    const fx = start.x - center.x;
-    const fy = start.y - center.y;
-    const a = dx * dx + dy * dy;
-    if (a === 0) {
-        return dist(start, center) <= radius;
-    }
-    const b = 2 * (fx * dx + fy * dy);
-    const c = (fx * fx + fy * fy) - radius * radius;
-    const discriminant = b * b - 4 * a * c;
-    if (discriminant < 0) {
-        return false;
-    }
-    const sqrtD = Math.sqrt(discriminant);
-    const t1 = (-b - sqrtD) / (2 * a);
-    const t2 = (-b + sqrtD) / (2 * a);
-    return (t1 >= 0 && t1 <= 1) || (t2 >= 0 && t2 <= 1);
-};
-
-const rememberMinefield = (state, empireId, minefield, knownOwner = false) => {
-    if (!state.minefieldIntel) {
-        state.minefieldIntel = {};
-    }
-    if (!state.minefieldIntel[empireId]) {
-        state.minefieldIntel[empireId] = [];
-    }
-    const intel = state.minefieldIntel[empireId];
-    const existing = intel.find(entry => entry.id === minefield.id);
-    const payload = {
-        id: minefield.id,
-        center: { ...minefield.center },
-        radius: minefield.radius,
-        estimatedStrength: Math.ceil(minefield.strength),
-        ownerEmpireId: knownOwner ? minefield.ownerEmpireId : null,
-        lastSeenTurn: state.turnCount
-    };
-    if (existing) {
-        Object.assign(existing, payload);
-        return;
-    }
-    intel.push(payload);
-};
-
-const applyMinefieldDamage = (state, fleet, minefield) => {
-    const rules = state.rules?.minefields || {};
-    const maxMineDamage = rules.maxMineDamage ?? 24;
-    const decayFactor = rules.decayFactor ?? 0.5;
-    const density = minefield.density;
-    const chanceToHit = Math.min(1, Math.max(0, density * (fleet.design.signature || 1)));
-    const roll = state.rng.nextInt(10000) / 10000;
-    if (roll > chanceToHit) {
-        return false;
-    }
-    const damage = 1 + state.rng.nextInt(maxMineDamage);
-    let remaining = damage;
-    if (fleet.armor > 0) {
-        const absorbed = Math.min(fleet.armor, remaining);
-        fleet.armor -= absorbed;
-        remaining -= absorbed;
-    }
-    if (remaining > 0) {
-        fleet.structure -= remaining;
-    }
-    fleet.hp = Math.max(0, fleet.armor + fleet.structure + fleet.shields);
-    minefield.strength = Math.max(0, minefield.strength - damage * decayFactor);
-    if (state.turnEvents) {
-        state.turnEvents.push({
-            type: "MINEFIELD_HIT",
-            fleetId: fleet.id,
-            minefieldId: minefield.id,
-            damage
-        });
-    }
-    return fleet.structure <= 0;
-};
-
 const resolveMovement = (state) => {
     const nextPositions = new Map();
-    const destroyedFleets = new Set();
     state.fleets
         .slice()
         .sort((a, b) => a.id - b.id)
@@ -235,23 +175,7 @@ const resolveMovement = (state) => {
             return;
         }
         const end = { x: move.x, y: move.y };
-        const path = { start: move.start, end };
-        state.minefields
-            .slice()
-            .sort((a, b) => a.id - b.id)
-            .forEach(minefield => {
-                if (fleet.owner === minefield.ownerEmpireId) {
-                    return;
-                }
-                if (!lineIntersectsCircle(path.start, path.end, minefield.center, minefield.radius)) {
-                    return;
-                }
-                const destroyed = applyMinefieldDamage(state, fleet, minefield);
-                rememberMinefield(state, fleet.owner, minefield, false);
-                if (destroyed) {
-                    destroyedFleets.add(fleet.id);
-                }
-            });
+        state.movementPaths.push({ fleetId: fleet.id, start: move.start, end });
         fleet.x = move.x;
         fleet.y = move.y;
         if (move.arrived) {
@@ -261,9 +185,6 @@ const resolveMovement = (state) => {
             fleet.fuel = Math.max(0, fleet.fuel - move.fuelUse);
         }
     });
-    if (destroyedFleets.size) {
-        state.fleets = state.fleets.filter(fleet => !destroyedFleets.has(fleet.id));
-    }
 };
 
 const resolveCombat = (state) => {
@@ -420,20 +341,29 @@ const resolveVisibility = (state) => {
 
     state.minefields.forEach(minefield => {
         const visible = state.activeScanners.some(scan => dist(scan, minefield.center) <= scan.r);
-        if (visible || minefield.ownerEmpireId === 1) {
-            rememberMinefield(state, 1, minefield, true);
+        if (minefield.visibility === "all" || visible || minefield.ownerEmpireId === 1) {
+            const intel = {
+                id: minefield.id,
+                center: { ...minefield.center },
+                radius: minefield.radius,
+                estimatedStrength: Math.ceil(minefield.strength),
+                ownerEmpireId: minefield.ownerEmpireId,
+                lastSeenTurn: state.turnCount
+            };
+            if (!state.minefieldIntel) {
+                state.minefieldIntel = {};
+            }
+            if (!state.minefieldIntel[1]) {
+                state.minefieldIntel[1] = [];
+            }
+            const existing = state.minefieldIntel[1].find(entry => entry.id === minefield.id);
+            if (existing) {
+                Object.assign(existing, intel);
+            } else {
+                state.minefieldIntel[1].push(intel);
+            }
         }
     });
-};
-
-const resolveMinefieldDecay = (state) => {
-    const decayRate = state.rules?.minefields?.turnDecay ?? 0.98;
-    state.minefields = state.minefields
-        .map(field => {
-            field.strength *= decayRate;
-            return field;
-        })
-        .filter(field => field.strength >= 1);
 };
 
 const resolveColonization = (state) => {
@@ -472,13 +402,17 @@ export const TurnEngine = {
         OrderResolver.resolveOrders(state, lockedOrders);
 
         resolveMovement(state);
+        resolveMinefieldLaying(state);
+        resolveMinefieldSweeping(state);
+        resolveMinefieldTransitDamage(state);
+        resolveMinefieldDecay(state);
+        resolveStargateJumps(state);
         resolveCombat(state);
         resolveColonization(state);
         resolveResearch(state);
         resolveProduction(state);
         resolvePopulation(state);
         resolveVisibility(state);
-        resolveMinefieldDecay(state);
 
         state.orders = [];
         state.turnEvents.push({ type: "TURN_COMPLETE", turn: state.turnCount });
