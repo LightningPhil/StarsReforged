@@ -1,7 +1,9 @@
 import { DB } from "../data/db.js";
 import { Game } from "../core/game.js";
+import { dist } from "../core/utils.js";
 import { getComponentById, getComponentsBySlot } from "../models/technology.js";
 import { validateDesign } from "../core/shipDesign.js";
+import { ORDER_TYPES } from "../models/orders.js";
 
 let renderer = null;
 
@@ -107,6 +109,111 @@ export const UI = {
 
     placeMinefield: function(fleet, mineUnits) {
         Game.placeMinefield(fleet, mineUnits);
+        this.updateSide();
+        this.updateComms();
+    },
+
+    findStarAtPosition: function(x, y, threshold = 12) {
+        let closest = null;
+        let closestDist = Infinity;
+        Game.stars
+            .filter(star => star.visible || star.known)
+            .forEach(star => {
+                const distance = dist({ x, y }, star);
+                if (distance <= threshold && distance < closestDist) {
+                    closest = star;
+                    closestDist = distance;
+                }
+            });
+        return closest;
+    },
+
+    getSelectedFleet: function() {
+        if (!Game.selection || Game.selection.type !== 'fleet') {
+            return null;
+        }
+        return Game.fleets[Game.selection.id] || null;
+    },
+
+    queueStargateJump: function(fleetId, sourcePlanetId, destinationPlanetId) {
+        const reject = (reason) => {
+            Game.logMsg(`ORDER REJECTED: ${reason}`, "System", "high");
+            this.updateComms();
+        };
+        const fleet = Game.fleets.find(item => item.id === fleetId);
+        if (!fleet || fleet.owner !== 1) {
+            reject("Fleet not under your command.");
+            return;
+        }
+        const source = Game.stars.find(item => item.id === sourcePlanetId);
+        const destination = Game.stars.find(item => item.id === destinationPlanetId);
+        if (!source || !destination) {
+            reject("Stargate endpoint unavailable.");
+            return;
+        }
+        if (Math.hypot(fleet.x - source.x, fleet.y - source.y) > 12) {
+            reject("Fleet not positioned at source stargate.");
+            return;
+        }
+        const sourceInfo = source.visible ? source : source.snapshot;
+        const destinationInfo = destination.visible ? destination : destination.snapshot;
+        if (!sourceInfo?.hasStargate) {
+            reject("Source stargate offline.");
+            return;
+        }
+        if (!destinationInfo?.hasStargate) {
+            reject("Destination stargate offline.");
+            return;
+        }
+        if (!destination.visible && !destination.known) {
+            reject("Destination not on record.");
+            return;
+        }
+        if (source.id === destination.id) {
+            reject("Destination must differ from source.");
+            return;
+        }
+        const distance = Math.hypot(destination.x - source.x, destination.y - source.y);
+        if (distance > sourceInfo.stargateRange) {
+            reject("Destination out of gate range.");
+            return;
+        }
+        Game.orders.push({
+            type: ORDER_TYPES.STARGATE_JUMP,
+            issuerId: 1,
+            payload: { fleetId, sourcePlanetId, destinationPlanetId }
+        });
+        Game.logMsg(`STARGATE: ${fleet.name} queued jump ${source.name} ➜ ${destination.name}`, "Command");
+        this.updateSide();
+        this.updateComms();
+    },
+
+    queueMineSweep: function(fleetId, minefieldId) {
+        const reject = (reason) => {
+            Game.logMsg(`ORDER REJECTED: ${reason}`, "System", "high");
+            this.updateComms();
+        };
+        const fleet = Game.fleets.find(item => item.id === fleetId);
+        if (!fleet || fleet.owner !== 1) {
+            reject("Fleet not under your command.");
+            return;
+        }
+        if (fleet.mineSweepingStrength <= 0) {
+            reject("Fleet lacks mine-sweeping capability.");
+            return;
+        }
+        const intelList = Game.minefieldIntel?.[1] || [];
+        const target = intelList.find(entry => entry.id === minefieldId);
+        if (!target) {
+            reject("Minefield target invalid.");
+            return;
+        }
+        Game.orders.push({
+            type: ORDER_TYPES.SWEEP_MINES,
+            issuerId: 1,
+            payload: { fleetId, minefieldId }
+        });
+        Game.logMsg(`SWEEP: ${fleet.name} queued sweep on minefield #${target.id}`, "Command");
         this.updateSide();
         this.updateComms();
     },
@@ -529,9 +636,98 @@ export const UI = {
                 h += `<button class="action" onclick="UI.placeMinefield(Game.fleets[${Game.selection.id}], document.getElementById('mine-units').value)">DEPLOY MINEFIELD</button>`;
                 h += `</div>`;
             }
+            if (fleet.mineSweepingStrength > 0) {
+                const intelList = Game.minefieldIntel?.[1] || [];
+                const existingSweep = Game.orders.some(order => order.type === ORDER_TYPES.SWEEP_MINES && order.payload?.fleetId === fleet.id);
+                const sweepOptions = intelList.map(entry => {
+                    const relation = entry.ownerEmpireId === 1 ? "Friendly" : "Hostile";
+                    return `<option value="${entry.id}">#${entry.id} • ${relation} • R=${Math.round(entry.radius)} • S≈${Math.round(entry.estimatedStrength)} • Seen T=${entry.lastSeenTurn}</option>`;
+                }).join("");
+                h += `<div class="panel-block"><h3>MINE SWEEP</h3>`;
+                h += `<div class="stat-row"><span>Sweep Str</span> <span class="val">${fleet.mineSweepingStrength}</span></div>`;
+                if (!intelList.length) {
+                    h += `<div style="font-size:12px; color:#667;">NO MINEFIELD SIGNALS IN DATABASE.</div>`;
+                } else {
+                    h += `<div class="stat-row"><span>Target</span> <select id="sweep-target"><option value="">Select</option>${sweepOptions}</select></div>`;
+                }
+                if (existingSweep) {
+                    h += `<div style="font-size:12px; color:var(--c-warn);">WARNING: EXISTING QUEUED ORDER FOR THIS UNIT</div>`;
+                }
+                h += `<button class="action" id="queue-sweep" data-fleet-id="${fleet.id}" ${intelList.length ? "" : "disabled"}>QUEUE SWEEP</button>`;
+                h += `</div>`;
+            }
+            const sourceStar = this.findStarAtPosition(fleet.x, fleet.y, 12);
+            const sourceInfo = sourceStar ? (sourceStar.visible ? sourceStar : sourceStar.snapshot) : null;
+            if (sourceStar && sourceInfo?.hasStargate) {
+                const destinations = Game.stars.filter(star => {
+                    if (!(star.visible || star.known)) {
+                        return false;
+                    }
+                    if (star.id === sourceStar.id) {
+                        return false;
+                    }
+                    const info = star.visible ? star : star.snapshot;
+                    if (!info?.hasStargate) {
+                        return false;
+                    }
+                    const distance = Math.hypot(star.x - sourceStar.x, star.y - sourceStar.y);
+                    return distance <= sourceInfo.stargateRange;
+                });
+                const existingJump = Game.orders.some(order => order.type === ORDER_TYPES.STARGATE_JUMP && order.payload?.fleetId === fleet.id);
+                const destinationOptions = destinations.map(star => `<option value="${star.id}">${star.name}</option>`).join("");
+                const massWarning = fleet.mass > sourceInfo.stargateMassLimit
+                    ? `<div style="font-size:12px; color:var(--c-warn);">MASS EXCEEDS LIMIT — MISJUMP RISK ↑</div>`
+                    : "";
+                h += `<div class="panel-block"><h3>STARGATE TRANSIT</h3>`;
+                h += `<div class="stat-row"><span>Source</span> <span class="val">${sourceStar.name}</span></div>`;
+                h += `<div class="stat-row"><span>Range</span> <span class="val">${sourceInfo.stargateRange} ly</span></div>`;
+                h += `<div class="stat-row"><span>Mass Limit</span> <span class="val">${sourceInfo.stargateMassLimit} kt</span></div>`;
+                h += `<div class="stat-row"><span>Fleet Mass</span> <span class="val ${fleet.mass > sourceInfo.stargateMassLimit ? 'alert' : ''}">${fleet.mass} kt</span></div>`;
+                if (destinations.length) {
+                    h += `<div class="stat-row"><span>Destination</span> <select id="stargate-destination"><option value="">Select</option>${destinationOptions}</select></div>`;
+                } else {
+                    h += `<div style="font-size:12px; color:#667;">NO VALID DESTINATIONS IN RANGE.</div>`;
+                }
+                if (existingJump) {
+                    h += `<div style="font-size:12px; color:var(--c-warn);">WARNING: EXISTING QUEUED ORDER FOR THIS UNIT</div>`;
+                }
+                h += `${massWarning}`;
+                h += `<div style="font-size:11px; color:#667; margin-top:4px;">Executes on turn resolution. Misjump risk rises above mass limit.</div>`;
+                h += `<button class="action" id="queue-stargate-jump" data-fleet-id="${fleet.id}" data-source-id="${sourceStar.id}" ${destinations.length ? "" : "disabled"}>QUEUE JUMP</button>`;
+                h += `</div>`;
+            }
             h += `<button class="action" style="border-color:var(--c-alert); color:var(--c-alert)">SCRAP FLEET</button>`;
         }
 
         p.innerHTML = h;
+
+        const sweepButton = document.getElementById('queue-sweep');
+        if (sweepButton) {
+            sweepButton.addEventListener('click', () => {
+                const fleetId = parseInt(sweepButton.dataset.fleetId, 10);
+                const targetId = parseInt(document.getElementById('sweep-target')?.value, 10);
+                if (!Number.isFinite(targetId)) {
+                    Game.logMsg("ORDER REJECTED: Minefield target invalid.", "System", "high");
+                    this.updateComms();
+                    return;
+                }
+                this.queueMineSweep(fleetId, targetId);
+            });
+        }
+
+        const stargateButton = document.getElementById('queue-stargate-jump');
+        if (stargateButton) {
+            stargateButton.addEventListener('click', () => {
+                const fleetId = parseInt(stargateButton.dataset.fleetId, 10);
+                const sourceId = parseInt(stargateButton.dataset.sourceId, 10);
+                const destinationId = parseInt(document.getElementById('stargate-destination')?.value, 10);
+                if (!Number.isFinite(destinationId)) {
+                    Game.logMsg("ORDER REJECTED: Destination not selected.", "System", "high");
+                    this.updateComms();
+                    return;
+                }
+                this.queueStargateJump(fleetId, sourceId, destinationId);
+            });
+        }
     }
 };

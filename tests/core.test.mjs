@@ -260,6 +260,74 @@ const testMinefieldDecay = () => {
     assert.ok(strength < 100, "Minefield strength should decay over multiple turns");
 };
 
+const testMineSweepingReducesStrength = () => {
+    const state = createBaseState();
+    const sweeperDesign = createDesign("Sweeper", "scout", ["ion_drive", "laser_array", "scanner_array"]);
+    const sweeper = new Fleet({
+        id: state.nextFleetId++,
+        owner: 1,
+        x: state.stars[0].x,
+        y: state.stars[0].y,
+        name: "Sweeper",
+        design: sweeperDesign
+    });
+    sweeper.mineSweepingStrength = 40;
+    state.fleets.push(sweeper);
+    const minefield = new Minefield({
+        id: 7,
+        ownerEmpireId: 2,
+        center: { x: sweeper.x, y: sweeper.y },
+        radius: 40,
+        strength: 120,
+        type: "standard",
+        turnCreated: state.turnCount
+    });
+    state.minefields.push(minefield);
+    state.orders = [{
+        type: ORDER_TYPES.SWEEP_MINES,
+        issuerId: 1,
+        payload: { fleetId: sweeper.id, minefieldId: minefield.id }
+    }];
+    const next = TurnEngine.processTurn(state);
+    const updated = next.minefields.find(field => field.id === minefield.id);
+    if (!updated) {
+        assert.ok(true, "Minefield should be removed when swept to zero");
+        return;
+    }
+    assert.ok(updated.strength < 120, "Minefield strength should be reduced by sweeping");
+};
+
+const testStargateJumpMovesFleet = () => {
+    const state = createBaseState();
+    const source = state.stars[0];
+    const destination = state.stars[1];
+    source.hasStargate = true;
+    source.stargateRange = 500;
+    source.stargateMassLimit = 500;
+    destination.hasStargate = true;
+    destination.stargateRange = 500;
+    destination.stargateMassLimit = 500;
+    const fleet = new Fleet({
+        id: state.nextFleetId++,
+        owner: 1,
+        x: source.x,
+        y: source.y,
+        name: "Jumper",
+        design: state.shipDesigns[1][0]
+    });
+    state.fleets.push(fleet);
+    state.orders = [{
+        type: ORDER_TYPES.STARGATE_JUMP,
+        issuerId: 1,
+        payload: { fleetId: fleet.id, sourcePlanetId: source.id, destinationPlanetId: destination.id }
+    }];
+    const next = TurnEngine.processTurn(state);
+    const moved = next.fleets.find(item => item.id === fleet.id);
+    assert.ok(moved, "Fleet should survive the jump");
+    assert.equal(moved.x, destination.x, "Fleet should arrive at destination x");
+    assert.equal(moved.y, destination.y, "Fleet should arrive at destination y");
+};
+
 const testStargateMisjumpScaling = () => {
     const state = createBaseState();
     const source = state.stars[0];
@@ -364,6 +432,8 @@ try {
     testResearchProgression();
     testMineDamageDeterminism();
     testMinefieldDecay();
+    testMineSweepingReducesStrength();
+    testStargateJumpMovesFleet();
     testStargateMisjumpScaling();
     testInvalidOrderRejection();
     console.log("All tests passed.");

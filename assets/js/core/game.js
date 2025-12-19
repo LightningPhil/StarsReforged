@@ -52,6 +52,7 @@ export const Game = {
     combatReports: [],
     turnHistory: [],
     turnEvents: [],
+    orderErrors: [],
     turnHash: 0n,
     empireCache: { taxTotal: 0, industrialOutput: 0 },
     players: [],
@@ -332,6 +333,8 @@ export const Game = {
             this.logMsg("Victory declared. No further turns possible.", "System", "high");
             return;
         }
+        const minefieldBefore = new Map(this.minefields.map(field => ([field.id, field.strength])));
+        const fleetNames = new Map(this.fleets.map(fleet => ([fleet.id, fleet.name])));
         const nextTurn = this.turnCount + 1;
         const seeded = this.hashTurnSeed(this.turnHash, BigInt(nextTurn));
         this.rngSeed = seeded;
@@ -339,8 +342,61 @@ export const Game = {
         this.startTurnLog();
         this.turnEvents = [];
         this.processAITurns();
+        const stargateOrders = this.orders.filter(order => order.type === ORDER_TYPES.STARGATE_JUMP && order.issuerId === 1);
+        const sweepOrders = this.orders.filter(order => order.type === ORDER_TYPES.SWEEP_MINES && order.issuerId === 1);
         const nextState = TurnEngine.processTurn(this);
         this.applyState(nextState);
+        if (this.orderErrors?.length) {
+            this.orderErrors.forEach(error => {
+                this.logMsg(`ORDER ERROR: ${error}`, "System", "high");
+            });
+        }
+        if (this.turnEvents?.length) {
+            this.turnEvents.forEach(event => {
+                if (event.type === "STARGATE_JUMP") {
+                    const fleetLabel = fleetNames.get(event.fleetId) || this.fleets.find(fleet => fleet.id === event.fleetId)?.name || `Fleet#${event.fleetId}`;
+                    const source = this.stars.find(star => star.id === event.sourcePlanetId);
+                    const destination = this.stars.find(star => star.id === event.destinationPlanetId);
+                    const sourceName = source?.name || `Star#${event.sourcePlanetId}`;
+                    const destinationName = destination?.name || `Star#${event.destinationPlanetId}`;
+                    this.logMsg(`JUMP COMPLETE: ${fleetLabel} ${sourceName} ➜ ${destinationName}`, "Command");
+                }
+                if (event.type === "STARGATE_MISJUMP") {
+                    const fleetLabel = fleetNames.get(event.fleetId) || this.fleets.find(fleet => fleet.id === event.fleetId)?.name || `Fleet#${event.fleetId}`;
+                    const stillAlive = this.fleets.some(fleet => fleet.id === event.fleetId);
+                    if (!stillAlive) {
+                        this.logMsg(`MISJUMP: Fleet ${event.fleetId} destroyed`, "System", "high");
+                    } else {
+                        this.logMsg(`MISJUMP: ${fleetLabel} took ${event.damage} damage`, "System", "high");
+                    }
+                }
+            });
+        }
+        if (sweepOrders.length) {
+            const minefieldAfter = new Map(this.minefields.map(field => ([field.id, field.strength])));
+            sweepOrders.forEach(order => {
+                const minefieldId = order.payload?.minefieldId;
+                if (!Number.isFinite(minefieldId)) {
+                    return;
+                }
+                const beforeStrength = minefieldBefore.get(minefieldId);
+                const afterStrength = minefieldAfter.get(minefieldId);
+                const fleetLabel = fleetNames.get(order.payload?.fleetId) || `Fleet#${order.payload?.fleetId}`;
+                if (!Number.isFinite(beforeStrength)) {
+                    this.logMsg(`SWEEP: no effect on minefield #${minefieldId}`, "Command");
+                    return;
+                }
+                if (!Number.isFinite(afterStrength)) {
+                    this.logMsg(`SWEEP: minefield #${minefieldId} collapsed`, "Command");
+                    return;
+                }
+                if (afterStrength < beforeStrength) {
+                    this.logMsg(`SWEEP: ${fleetLabel} reduced minefield #${minefieldId} (S ${Math.round(beforeStrength)} → ${Math.round(afterStrength)})`, "Command");
+                    return;
+                }
+                this.logMsg(`SWEEP: no effect on minefield #${minefieldId}`, "Command");
+            });
+        }
         this.resolveEndOfTurn();
         this.updateVisibility();
         if (renderer) {
@@ -386,6 +442,7 @@ export const Game = {
         this.combatReports = nextState.combatReports;
         this.turnHistory = nextState.turnHistory;
         this.turnEvents = nextState.turnEvents;
+        this.orderErrors = nextState.orderErrors || [];
         this.players = nextState.players || this.players;
         const humanEconomy = this.economy?.[1];
         if (humanEconomy) {
