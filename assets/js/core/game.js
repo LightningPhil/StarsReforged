@@ -1,5 +1,5 @@
 import { DB } from "../data/db.js";
-import { Fleet, Message, Minefield, Race, ResourcePacket, ShipDesign, Star } from "../models/entities.js";
+import { Fleet, Message, Race, ResourcePacket, Star } from "../models/entities.js";
 import { PCG32 } from "./rng.js";
 import { dist, intSqrt } from "./utils.js";
 import { TurnEngine } from "./turnEngine.js";
@@ -17,6 +17,8 @@ import {
     normalizeAllocation,
     resolveResearchForEmpire
 } from "./technologyResolver.js";
+import { buildShipDesign } from "./shipDesign.js";
+import { ORDER_TYPES } from "../models/orders.js";
 
 let ui = null;
 let renderer = null;
@@ -40,8 +42,8 @@ export const Game = {
     fleets: [],
     packets: [],
     minefields: [],
-    designs: [],
-    aiDesigns: [],
+    shipDesigns: {},
+    minefieldIntel: {},
     messages: [],
     battles: [],
     sectorScans: [],
@@ -96,22 +98,7 @@ export const Game = {
         this.minerals = this.mineralStock.i + this.mineralStock.b + this.mineralStock.g;
         this.rng = new PCG32(this.rngSeed, 54n);
         this.turnHash = this.hashTurnSeed(this.rngSeed, BigInt(this.turnCount));
-        this.designs.push(new ShipDesign({
-            name: "Probe v1",
-            hull: DB.hulls[0],
-            engine: DB.engines[0],
-            weapon: DB.weapons[0],
-            shield: DB.weapons[0],
-            special: DB.specials[0]
-        }));
-        this.designs.push(new ShipDesign({
-            name: "Colony Ark",
-            hull: DB.hulls[1],
-            engine: DB.engines[0],
-            weapon: DB.weapons[0],
-            shield: DB.weapons[0],
-            special: DB.specials[1]
-        }));
+        this.seedShipDesigns();
 
         this.generateGalaxy(80);
         this.seedHomeworld();
@@ -188,6 +175,36 @@ export const Game = {
         }
     },
 
+    seedShipDesigns: function() {
+        const hulls = this.rules?.hulls || [];
+        this.shipDesigns = {};
+        this.players.forEach(player => {
+            this.shipDesigns[player.id] = [];
+        });
+        const scoutHull = hulls.find(hull => hull.id === "scout") || hulls[0];
+        const frigateHull = hulls.find(hull => hull.id === "frigate") || hulls[1] || scoutHull;
+        const scoutBuild = buildShipDesign({
+            name: "Probe v1",
+            hull: scoutHull,
+            componentIds: ["ion_drive", "laser_array", "scanner_array"]
+        });
+        const colonyBuild = buildShipDesign({
+            name: "Colony Ark",
+            hull: frigateHull,
+            componentIds: ["ion_drive", "laser_array", "colony_pod", "reactor_core"]
+        });
+        [scoutBuild, colonyBuild].forEach(result => {
+            if (result.design) {
+                this.shipDesigns[1].push(result.design);
+            }
+        });
+        this.players
+            .filter(player => player.type === "ai")
+            .forEach(player => {
+                AIController.ensureBasicDesigns(this, player.id);
+            });
+    },
+
     startTurnLog: function() {
         this.currentTurnLog = {
             turn: this.year,
@@ -258,7 +275,7 @@ export const Game = {
             x: h.x,
             y: h.y,
             name: "Scout 1",
-            design: this.designs[0]
+            design: this.shipDesigns[1]?.[0]
         }));
         this.fleets.push(new Fleet({
             id: this.nextFleetId++,
@@ -266,7 +283,7 @@ export const Game = {
             x: h.x,
             y: h.y,
             name: "Colony 1",
-            design: this.designs[1]
+            design: this.shipDesigns[1]?.[1] || this.shipDesigns[1]?.[0]
         }));
     },
 
@@ -275,30 +292,15 @@ export const Game = {
         if (!aiPlayers.length) {
             return;
         }
-        const enemyDesign = new ShipDesign({
-            name: "Raider",
-            hull: DB.hulls[0],
-            engine: DB.engines[1],
-            weapon: DB.weapons[1],
-            shield: DB.weapons[0],
-            special: DB.specials[0]
-        });
-        const enemyColony = new ShipDesign({
-            name: "Seeder",
-            hull: DB.hulls[1],
-            engine: DB.engines[1],
-            weapon: DB.weapons[0],
-            shield: DB.weapons[0],
-            special: DB.specials[1]
-        });
-        this.aiDesigns = [enemyDesign, enemyColony];
-
         const availableStars = this.stars.filter(star => !star.owner && star.id !== 0);
         aiPlayers.forEach((player, index) => {
             const rival = availableStars[index] || this.stars[10 + index];
             if (!rival) {
                 return;
             }
+            AIController.ensureBasicDesigns(this, player.id);
+            const designs = this.shipDesigns[player.id] || [];
+            const raiderDesign = designs.find(design => !design.flags.includes("colonize")) || designs[0];
             rival.owner = player.id;
             rival.name = index === 0 ? "CRIMSON NODE" : `DIRECTORATE-${player.id}`;
             rival.pop = 40000;
@@ -312,7 +314,7 @@ export const Game = {
                 x: rival.x,
                 y: rival.y,
                 name: `Raider Wing ${player.id}`,
-                design: enemyDesign
+                design: raiderDesign
             }));
         });
     },
@@ -359,6 +361,8 @@ export const Game = {
         this.fleets = nextState.fleets;
         this.packets = nextState.packets;
         this.minefields = nextState.minefields;
+        this.shipDesigns = nextState.shipDesigns || this.shipDesigns;
+        this.minefieldIntel = nextState.minefieldIntel || this.minefieldIntel;
         this.messages = nextState.messages;
         this.battles = nextState.battles;
         this.sectorScans = nextState.sectorScans;
@@ -609,21 +613,24 @@ export const Game = {
         star.queue = null;
     },
 
-    saveDesign: function() {
-        const hull = DB.hulls.find(h => h.id === document.getElementById('des-hull').value);
-        const engine = DB.engines.find(e => e.id === document.getElementById('des-eng').value);
-        const weapon = DB.weapons.find(w => w.id === document.getElementById('des-wep').value);
-        const shield = DB.weapons.find(w => w.id === document.getElementById('des-shi').value);
-        const special = DB.specials.find(s => s.id === document.getElementById('des-spec').value);
-        const name = document.getElementById('des-name').value || `Design-${this.roll(99)}`;
-
-        const design = new ShipDesign({ name, hull, engine, weapon, shield, special });
-        this.designs.push(design);
-        this.logMsg(`New Ship Design "${design.name}" saved.`, "Engineering");
+    saveDesign: function({ name, hullId, componentIds }) {
+        const hull = (this.rules?.hulls || []).find(entry => entry.id === hullId);
+        const designName = name || `Design-${this.roll(99)}`;
+        const result = buildShipDesign({ name: designName, hull, componentIds });
+        if (!result.design) {
+            return { success: false, errors: result.errors };
+        }
+        if (!this.shipDesigns[1]) {
+            this.shipDesigns[1] = [];
+        }
+        this.shipDesigns[1].push(result.design);
+        this.logMsg(`New Ship Design \"${result.design.name}\" saved.`, "Engineering");
+        return { success: true, design: result.design };
     },
 
-    queueBuild: function(star, designIndex, ownerId = 1) {
-        const blueprint = ownerId === 1 ? this.designs[designIndex] : this.aiDesigns[designIndex];
+    queueBuild: function(star, designId, ownerId = 1) {
+        const designs = this.shipDesigns?.[ownerId] || [];
+        const blueprint = designs.find(design => design.designId === designId) || designs[designId];
         if (!blueprint) {
             return;
         }
@@ -734,14 +741,14 @@ export const Game = {
 
     generateCombat: function(attacker, defenderStar) {
         const attackerModifiers = getTechnologyModifiers(getTechnologyStateForEmpire(this, attacker.owner));
-        const attackPower = Math.floor(attacker.design.bv * attackerModifiers.shipDamage) + this.roll(30);
+        const attackPower = Math.floor(attacker.design.attack * attackerModifiers.shipDamage) + this.roll(30);
         const defensePower = (defenderStar.def.base ? 120 : 40) + defenderStar.def.mines;
         const rounds = [];
-        let attackerHP = Math.floor(attacker.hp * attackerModifiers.shieldStrength);
+        let attackerHP = Math.floor((attacker.armor + attacker.structure + attacker.shields) * attackerModifiers.shieldStrength);
         let defenderHP = defensePower * 2;
 
         for (let round = 1; round <= 3; round++) {
-            const atk = Math.floor(attacker.design.weapon.dmg * attackerModifiers.shipDamage) + this.roll(10);
+            const atk = Math.floor(attacker.design.attack * attackerModifiers.shipDamage) + this.roll(10);
             const def = Math.floor(defensePower / 4) + this.roll(8);
             defenderHP -= atk;
             attackerHP -= def;
@@ -780,15 +787,31 @@ export const Game = {
         renderer.cam.dirty = true;
     },
 
-    placeMinefield: function(fleet, range) {
-        if (!fleet.design.flags.includes('minelayer')) {
+    placeMinefield: function(fleet, mineUnits) {
+        if (!fleet.design.flags.includes("minelayer")) {
             this.logMsg("This fleet lacks a mine-laying module.", "Command");
             return;
         }
-        const modifiers = getTechnologyModifiers(getTechnologyStateForEmpire(this, fleet.owner));
-        const effectiveRange = range || Math.floor(160 * modifiers.shipRange);
-        this.minefields.push(new Minefield({ x: fleet.x, y: fleet.y, radius: effectiveRange, owner: fleet.owner }));
-        this.logMsg(`${fleet.name} deployed a minefield.`, "Command");
+        if (fleet.dest) {
+            this.logMsg("Fleet must remain stationary to deploy mines.", "Command");
+            return;
+        }
+        const units = Math.max(0, Math.min(fleet.mineUnits, Math.floor(mineUnits || fleet.mineUnits)));
+        if (units <= 0) {
+            this.logMsg("No mine units available to deploy.", "Command");
+            return;
+        }
+        this.orders.push({
+            type: ORDER_TYPES.DEPLOY_MINEFIELD,
+            issuerId: fleet.owner,
+            payload: {
+                fleetId: fleet.id,
+                mineUnitsToDeploy: units,
+                centerX: fleet.x,
+                centerY: fleet.y
+            }
+        });
+        this.logMsg(`${fleet.name} queued minefield deployment.`, "Command");
     },
 
     withdrawMinerals: function(amount, ownerId = 1) {
@@ -883,6 +906,30 @@ export const Game = {
                 star.visible = false;
             }
         });
+
+        if (!this.minefieldIntel[1]) {
+            this.minefieldIntel[1] = [];
+        }
+        this.minefields.forEach(minefield => {
+            const visible = this.activeScanners.some(scan => dist(scan, minefield.center) <= scan.r);
+            if (!visible && minefield.ownerEmpireId !== 1) {
+                return;
+            }
+            const existing = this.minefieldIntel[1].find(entry => entry.id === minefield.id);
+            const payload = {
+                id: minefield.id,
+                center: { ...minefield.center },
+                radius: minefield.radius,
+                estimatedStrength: Math.ceil(minefield.strength),
+                ownerEmpireId: minefield.ownerEmpireId,
+                lastSeenTurn: this.turnCount
+            };
+            if (existing) {
+                Object.assign(existing, payload);
+            } else {
+                this.minefieldIntel[1].push(payload);
+            }
+        });
     },
 
     playSound: function(freq, duration) {
@@ -907,6 +954,14 @@ export const Game = {
 
     getTechnologyFields: function() {
         return this.rules?.technologyFields || [];
+    },
+
+    getHulls: function() {
+        return this.rules?.hulls || [];
+    },
+
+    getHullById: function(hullId) {
+        return this.getHulls().find(hull => hull.id === hullId);
     },
 
     getTechnologyState: function(empireId = 1) {

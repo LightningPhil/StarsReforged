@@ -10,7 +10,8 @@ const sortByInitiative = (a, b) => {
 const buildFleetState = (fleet, modifiers) => ({
     fleet,
     shields: Math.max(0, Math.floor(fleet.design.shields * modifiers.shieldStrength)),
-    hull: fleet.design.hull,
+    armor: fleet.armor,
+    structure: fleet.structure,
     initiative: Math.floor(fleet.design.initiative * modifiers.combatInitiative),
     attack: Math.max(0, Math.floor(fleet.design.attack * modifiers.shipDamage))
 });
@@ -22,10 +23,15 @@ const applyDamage = (fleetState, damage) => {
         fleetState.shields -= absorbed;
         remaining -= absorbed;
     }
-    if (remaining > 0) {
-        fleetState.hull -= remaining;
+    if (remaining > 0 && fleetState.armor > 0) {
+        const absorbed = Math.min(fleetState.armor, remaining);
+        fleetState.armor -= absorbed;
+        remaining -= absorbed;
     }
-    return fleetState.hull > 0;
+    if (remaining > 0) {
+        fleetState.structure -= remaining;
+    }
+    return fleetState.structure > 0;
 };
 
 const applyDamageToGroup = (targets, totalDamage) => {
@@ -130,7 +136,7 @@ export const CombatResolver = {
             });
 
         combatants.forEach(item => {
-            if (item.destroyed || item.hull <= 0) {
+            if (item.destroyed || item.structure <= 0) {
                 losses[item.fleet.owner]?.push(item.fleet.id);
             }
         });
@@ -139,9 +145,12 @@ export const CombatResolver = {
         const winner = survivingEmpires.length === 1 ? survivingEmpires[0] : null;
 
         const survivingFleets = combatants
-            .filter(item => !item.destroyed && item.hull > 0)
+            .filter(item => !item.destroyed && item.structure > 0)
             .map(item => {
-                item.fleet.hp = item.hull + item.shields;
+                item.fleet.armor = item.armor;
+                item.fleet.structure = item.structure;
+                item.fleet.shields = item.shields;
+                item.fleet.hp = item.armor + item.structure + item.shields;
                 return item.fleet;
             });
 

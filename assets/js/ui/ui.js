@@ -1,6 +1,7 @@
 import { DB } from "../data/db.js";
 import { Game } from "../core/game.js";
-import { ShipDesign } from "../models/entities.js";
+import { getComponentById, getComponentsBySlot } from "../models/technology.js";
+import { validateDesign } from "../core/shipDesign.js";
 
 let renderer = null;
 
@@ -11,8 +12,7 @@ export const bindRenderer = (rendererRef) => {
 export const UI = {
     init: function() {
         this.renderTech();
-        this.popDropdowns();
-        this.updateDesignStats();
+        this.setupDesignWorkshop();
         this.updateHeader();
         this.updateComms();
         this.updateDesignList();
@@ -29,9 +29,11 @@ export const UI = {
             document.getElementById('rd-budget').innerText = value;
         });
 
-        ['des-hull', 'des-eng', 'des-wep', 'des-shi', 'des-spec'].forEach(id => {
-            document.getElementById(id).addEventListener('change', () => this.updateDesignStats());
+        document.getElementById('design-hull')?.addEventListener('change', () => {
+            this.renderDesignSlots();
+            this.updateDesignStats();
         });
+        document.getElementById('design-name')?.addEventListener('input', () => this.updateDesignStats());
 
         document.getElementById('msg-send').addEventListener('click', () => {
             const recipientId = parseInt(document.getElementById('msg-recipient').value, 10);
@@ -47,7 +49,31 @@ export const UI = {
     },
 
     saveDesign: function() {
-        Game.saveDesign();
+        const hullId = document.getElementById('design-hull')?.value;
+        const nameInput = document.getElementById('design-name')?.value;
+        const randomSuffix = Game.roll ? Game.roll(99) : Math.floor(Math.random() * 99);
+        const name = nameInput || `Design-${randomSuffix}`;
+        const selects = Array.from(document.querySelectorAll('#design-slots select'));
+        const componentIds = selects.map(select => select.value);
+        const result = Game.saveDesign({ name, hullId, componentIds });
+        if (!result.success) {
+            const errorList = document.getElementById('design-errors');
+            if (errorList) {
+                errorList.innerHTML = '';
+                errorList.classList.add('error');
+                result.errors.forEach(err => {
+                    const row = document.createElement('div');
+                    row.textContent = err;
+                    errorList.appendChild(row);
+                });
+            }
+            return;
+        }
+        const list = document.getElementById('design-list');
+        if (list) {
+            list.classList.add('design-locked');
+            setTimeout(() => list.classList.remove('design-locked'), 600);
+        }
         this.updateDesignList();
         this.updateSide();
         this.updateComms();
@@ -79,8 +105,8 @@ export const UI = {
         this.updateComms();
     },
 
-    placeMinefield: function(fleet) {
-        Game.placeMinefield(fleet);
+    placeMinefield: function(fleet, mineUnits) {
+        Game.placeMinefield(fleet, mineUnits);
         this.updateSide();
         this.updateComms();
     },
@@ -248,52 +274,122 @@ export const UI = {
         });
     },
 
-    popDropdowns: function() {
-        const fill = (id, list) => {
-            const sel = document.getElementById(id);
-            sel.innerHTML = '';
-            list.forEach(item => {
-                const o = document.createElement('option');
-                o.value = item.id;
-                o.text = `${item.name} (${item.cost}cr)`;
-                sel.add(o);
-            });
-        };
-        fill('des-hull', DB.hulls);
-        fill('des-eng', DB.engines);
-        fill('des-wep', DB.weapons);
-        fill('des-shi', DB.weapons);
-        fill('des-spec', DB.specials);
+    setupDesignWorkshop: function() {
+        const hullSelect = document.getElementById('design-hull');
+        const hulls = Game.getHulls();
+        if (!hullSelect) {
+            return;
+        }
+        hullSelect.innerHTML = '';
+        hulls.forEach(hull => {
+            const opt = document.createElement('option');
+            opt.value = hull.id;
+            opt.text = `${hull.name} (${hull.cost}cr)`;
+            hullSelect.add(opt);
+        });
+        if (!hullSelect.value && hulls.length) {
+            hullSelect.value = hulls[0].id;
+        }
+        this.renderDesignSlots();
+        this.updateDesignStats();
+    },
+
+    renderDesignSlots: function() {
+        const hullId = document.getElementById('design-hull')?.value;
+        const hull = Game.getHullById(hullId);
+        const grid = document.getElementById('design-slots');
+        if (!grid || !hull) {
+            return;
+        }
+        grid.innerHTML = '';
+        Object.entries(hull.slotLayout || {}).forEach(([slotType, count]) => {
+            for (let i = 0; i < count; i++) {
+                const slot = document.createElement('div');
+                slot.className = 'slot-card';
+                const label = document.createElement('div');
+                label.className = 'slot-label';
+                label.textContent = `${slotType.toUpperCase()} SLOT`;
+                const select = document.createElement('select');
+                select.dataset.slotType = slotType;
+                getComponentsBySlot(slotType).forEach(component => {
+                    const opt = document.createElement('option');
+                    opt.value = component.id;
+                    opt.text = `${component.name} (${component.cost}cr)`;
+                    select.add(opt);
+                });
+                select.addEventListener('change', () => this.updateDesignStats());
+                slot.appendChild(label);
+                slot.appendChild(select);
+                grid.appendChild(slot);
+            }
+        });
     },
 
     updateDesignStats: function() {
-        const hull = DB.hulls.find(h => h.id === document.getElementById('des-hull').value);
-        const engine = DB.engines.find(e => e.id === document.getElementById('des-eng').value);
-        const weapon = DB.weapons.find(w => w.id === document.getElementById('des-wep').value);
-        const shield = DB.weapons.find(w => w.id === document.getElementById('des-shi').value);
-        const special = DB.specials.find(s => s.id === document.getElementById('des-spec').value);
+        const hullId = document.getElementById('design-hull')?.value;
+        const hull = Game.getHullById(hullId);
+        if (!hull) {
+            return;
+        }
+        const selects = Array.from(document.querySelectorAll('#design-slots select'));
+        const componentIds = selects.map(select => select.value);
+        const components = componentIds.map(id => getComponentById(id)).filter(Boolean);
+        const validation = validateDesign(hull, components);
+        const stats = validation.stats;
+        const errors = validation.errors;
 
-        const design = new ShipDesign({
-            name: "TEMP",
-            hull,
-            engine,
-            weapon,
-            shield,
-            special
-        });
+        document.getElementById('sim-cost').innerText = stats ? hull.cost + components.reduce((sum, component) => sum + component.cost, 0) : 0;
+        document.getElementById('sim-mass').innerText = stats?.mass ?? 0;
+        document.getElementById('sim-armor').innerText = stats?.armor ?? 0;
+        document.getElementById('sim-structure').innerText = stats?.structure ?? 0;
+        document.getElementById('sim-range').innerText = stats?.range ?? 0;
+        document.getElementById('sim-speed').innerText = stats?.speed ?? 0;
+        document.getElementById('sim-attack').innerText = stats?.attack ?? 0;
+        document.getElementById('sim-defense').innerText = stats?.defense ?? 0;
+        document.getElementById('sim-power').innerText = stats ? `${stats.powerOutput}/${stats.powerUsage}` : '0/0';
+        document.getElementById('sim-mine').innerText = stats?.mineCapacity ?? 0;
 
-        document.getElementById('sim-cost').innerText = design.cost;
-        document.getElementById('sim-mass').innerText = design.mass;
-        document.getElementById('sim-fuel').innerText = design.fuel;
-        document.getElementById('sim-range').innerText = design.range;
-        document.getElementById('sim-speed').innerText = design.speed;
-        document.getElementById('sim-bv').innerText = design.bv;
+        const clamp = (value, max = 100) => Math.min(max, Math.max(0, value));
+        const speedBar = document.getElementById('sim-speed-bar');
+        const attackBar = document.getElementById('sim-attack-bar');
+        const defenseBar = document.getElementById('sim-defense-bar');
+        if (speedBar) {
+            speedBar.style.width = `${clamp((stats?.speed || 0) * 4)}%`;
+        }
+        if (attackBar) {
+            attackBar.style.width = `${clamp((stats?.attack || 0) * 1.2)}%`;
+        }
+        if (defenseBar) {
+            defenseBar.style.width = `${clamp((stats?.defense || 0) * 2)}%`;
+        }
+
+        const errorList = document.getElementById('design-errors');
+        if (errorList) {
+            errorList.innerHTML = '';
+            if (!validation.valid) {
+                errorList.classList.add('error');
+                errors.forEach(err => {
+                    const row = document.createElement('div');
+                    row.textContent = err;
+                    errorList.appendChild(row);
+                });
+            } else {
+                errorList.classList.remove('error');
+                errorList.innerHTML = '<div>Design valid. Ready to lock.</div>';
+            }
+        }
+
+        const saveButton = document.getElementById('design-save');
+        if (saveButton) {
+            saveButton.disabled = !validation.valid;
+        }
     },
 
     updateDesignList: function() {
         const list = document.getElementById('design-list');
         list.innerHTML = '';
-        Game.designs.forEach((design, index) => {
+        const designs = Game.shipDesigns?.[1] || [];
+        designs.forEach((design) => {
             const row = document.createElement('div');
             row.style.borderBottom = '1px solid #223';
             row.style.padding = '6px 0';
@@ -314,7 +410,7 @@ export const UI = {
                     this.updateComms();
                     return;
                 }
-                this.queueBuild(star, index);
+                this.queueBuild(star, design.designId);
             });
             row.appendChild(btn);
             list.appendChild(row);
@@ -427,7 +523,11 @@ export const UI = {
             h += `<div class="stat-row"><span>Range</span> <span class="val">${fleet.design.range}</span></div>`;
             h += `<div class="stat-row"><span>Mission</span> <span class="val">${fleet.dest ? 'Transit' : 'Orbit'}</span></div>`;
             if (fleet.design.flags.includes('minelayer')) {
-                h += `<button class="action" onclick="UI.placeMinefield(Game.fleets[${Game.selection.id}])">DEPLOY MINEFIELD</button>`;
+                h += `<div class="panel-block"><h3>Minefield</h3>`;
+                h += `<div class="stat-row"><span>Mine Units</span> <span class="val">${fleet.mineUnits}</span></div>`;
+                h += `<input id="mine-units" type="range" min="0" max="${fleet.mineUnits}" value="${fleet.mineUnits}" style="width:100%;">`;
+                h += `<button class="action" onclick="UI.placeMinefield(Game.fleets[${Game.selection.id}], document.getElementById('mine-units').value)">DEPLOY MINEFIELD</button>`;
+                h += `</div>`;
             }
             h += `<button class="action" style="border-color:var(--c-alert); color:var(--c-alert)">SCRAP FLEET</button>`;
         }

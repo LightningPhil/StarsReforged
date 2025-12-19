@@ -1,5 +1,6 @@
 import { ORDER_TYPES } from "../models/orders.js";
 import { dist } from "../core/utils.js";
+import { buildShipDesign } from "../core/shipDesign.js";
 
 const buildAIState = (gameState, playerId) => {
     const ownedStars = gameState.stars.filter(star => star.owner === playerId);
@@ -10,7 +11,7 @@ const buildAIState = (gameState, playerId) => {
 
     gameState.stars.forEach(star => {
         const nearbyEnemies = enemyFleets.filter(fleet => dist(fleet, star) < 220);
-        const risk = nearbyEnemies.reduce((sum, fleet) => sum + (fleet.design?.bv || 0), 0);
+        const risk = nearbyEnemies.reduce((sum, fleet) => sum + (fleet.design?.attack || 0), 0);
         riskScores.set(star.id, risk);
     });
 
@@ -60,10 +61,10 @@ const createMoveOrder = (fleet, target, playerId) => ({
     payload: { fleetId: fleet.id, dest: { x: target.x, y: target.y } }
 });
 
-const createBuildOrder = (star, designIndex, playerId) => ({
+const createBuildOrder = (star, designId, playerId) => ({
     type: ORDER_TYPES.BUILD_SHIPS,
     issuerId: playerId,
-    payload: { starId: star.id, designIndex }
+    payload: { starId: star.id, designId }
 });
 
 const createColonizeOrder = (fleet, playerId) => ({
@@ -73,6 +74,38 @@ const createColonizeOrder = (fleet, playerId) => ({
 });
 
 export const AIController = {
+    ensureBasicDesigns(gameState, playerId) {
+        if (!gameState.shipDesigns) {
+            gameState.shipDesigns = {};
+        }
+        if (!gameState.shipDesigns[playerId]) {
+            gameState.shipDesigns[playerId] = [];
+        }
+        const designs = gameState.shipDesigns[playerId];
+        if (designs.length) {
+            return designs;
+        }
+        const hulls = gameState.rules?.hulls || [];
+        const scoutHull = hulls.find(hull => hull.id === "scout") || hulls[0];
+        const frigateHull = hulls.find(hull => hull.id === "frigate") || hulls[1] || scoutHull;
+        const raider = buildShipDesign({
+            name: "Raider",
+            hull: scoutHull,
+            componentIds: ["ion_drive", "laser_array", "armor_plating"]
+        });
+        const colonizer = buildShipDesign({
+            name: "Seeder",
+            hull: frigateHull,
+            componentIds: ["ion_drive", "laser_array", "colony_pod", "reactor_core"]
+        });
+        [raider, colonizer].forEach(result => {
+            if (result.design) {
+                designs.push(result.design);
+            }
+        });
+        return designs;
+    },
+
     runTurn(gameState, playerId, difficulty, options = {}) {
         const roll = options.roll || ((max) => Math.floor(Math.random() * max));
         const maxTimeMs = options.maxTimeMs ?? 100;
@@ -89,9 +122,12 @@ export const AIController = {
 
         const economy = gameState.economy?.[playerId];
         const credits = economy?.credits ?? 0;
-        const designs = gameState.aiDesigns || [];
+        const designs = this.ensureBasicDesigns(gameState, playerId) || [];
         const colonizerIndex = designs.findIndex(design => design.flags.includes("colonize"));
-        const raiderIndex = designs.findIndex(design => !design.flags.includes("colonize"));
+        const raiderIndex = designs
+            .map((design, index) => ({ design, index }))
+            .filter(entry => !entry.design.flags.includes("colonize"))
+            .sort((a, b) => a.design.cost - b.design.cost)[0]?.index ?? -1;
 
         aiState.ownedStars
             .filter(star => !star.queue)
@@ -100,11 +136,11 @@ export const AIController = {
                     return;
                 }
                 if (colonizerIndex >= 0 && !gameState.fleets.some(fleet => fleet.owner === playerId && fleet.design.flags.includes("colonize"))) {
-                    orders.push(createBuildOrder(star, colonizerIndex, playerId));
+                    orders.push(createBuildOrder(star, designs[colonizerIndex].designId, playerId));
                     return;
                 }
                 if (raiderIndex >= 0 && credits >= designs[raiderIndex]?.cost && roll(100) < 30) {
-                    orders.push(createBuildOrder(star, raiderIndex, playerId));
+                    orders.push(createBuildOrder(star, designs[raiderIndex].designId, playerId));
                 }
             });
 

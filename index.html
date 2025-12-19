@@ -27,9 +27,10 @@
         <button class="icon-btn" onclick="UI.setScreen('comms')" title="Diplomacy/Logs">C</button>
     </nav>
 
-    <div id="main-view">
+    <div id="main-view" class="crt">
         <canvas id="galaxy-canvas"></canvas>
         <div class="grain"></div>
+        <div id="minefield-tooltip" class="minefield-tooltip"></div>
 
         <!-- EMPIRE SCREEN -->
         <div id="screen-empire" class="screen-overlay">
@@ -113,26 +114,31 @@
 
         <!-- DESIGN SCREEN -->
         <div id="screen-design" class="screen-overlay">
-            <h1 style="color:var(--c-cyan)">NAVAL ARCHITECT</h1>
-            <div class="grid-layout">
+            <h1 style="color:var(--c-cyan)">SHIP DESIGN WORKSHOP</h1>
+            <div class="grid-layout design-grid">
                 <div class="card">
-                    <h3>Hull & Components</h3>
-                    <div class="stat-row">Hull: <select id="des-hull"></select></div>
-                    <div class="stat-row">Engine: <select id="des-eng"></select></div>
-                    <div class="stat-row">Weapon: <select id="des-wep"></select></div>
-                    <div class="stat-row">Shield: <select id="des-shi"></select></div>
-                    <div class="stat-row">Special: <select id="des-spec"></select></div>
-                    <input type="text" id="des-name" value="New Ship Class" style="width:100%; margin-top:10px;">
-                    <button class="action" onclick="UI.saveDesign()">SAVE BLUEPRINT</button>
+                    <h3>Hull & Slots</h3>
+                    <div class="stat-row">Hull: <select id="design-hull"></select></div>
+                    <input type="text" id="design-name" value="New Ship Class" style="width:100%; margin-top:10px;">
+                    <div id="design-slots" class="slot-grid"></div>
+                    <button class="action" id="design-save" onclick="UI.saveDesign()">LOCK DESIGN</button>
+                    <div id="design-errors" class="design-errors"></div>
                 </div>
                 <div class="card">
                     <h3>Simulated Specs</h3>
                     <div class="stat-row"><span>Cost:</span> <span class="val" id="sim-cost">0</span></div>
                     <div class="stat-row"><span>Mass:</span> <span class="val" id="sim-mass">0</span>kt</div>
-                    <div class="stat-row"><span>Fuel Cap:</span> <span class="val" id="sim-fuel">0</span>mg</div>
+                    <div class="stat-row"><span>Armor:</span> <span class="val" id="sim-armor">0</span></div>
+                    <div class="stat-row"><span>Structure:</span> <span class="val" id="sim-structure">0</span></div>
                     <div class="stat-row"><span>Range:</span> <span class="val" id="sim-range">0</span>ly</div>
                     <div class="stat-row"><span>Speed:</span> <span class="val" id="sim-speed">0</span></div>
-                    <div class="stat-row"><span>Battle Value:</span> <span class="val" id="sim-bv">0</span></div>
+                    <div class="bar-wrap"><div class="bar-fill" id="sim-speed-bar"></div></div>
+                    <div class="stat-row"><span>Attack:</span> <span class="val" id="sim-attack">0</span></div>
+                    <div class="bar-wrap"><div class="bar-fill" id="sim-attack-bar"></div></div>
+                    <div class="stat-row"><span>Defense:</span> <span class="val" id="sim-defense">0</span></div>
+                    <div class="bar-wrap"><div class="bar-fill" id="sim-defense-bar"></div></div>
+                    <div class="stat-row"><span>Power:</span> <span class="val" id="sim-power">0/0</span></div>
+                    <div class="stat-row"><span>Mine Cap:</span> <span class="val" id="sim-mine">0</span></div>
                 </div>
                 <div class="card">
                     <h3>Saved Blueprints</h3>

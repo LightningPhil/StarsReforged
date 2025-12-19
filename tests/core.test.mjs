@@ -8,22 +8,19 @@ import { calculateScores, resolveDefeats } from "../assets/js/core/gameResolutio
 import { VictoryResolver } from "../assets/js/core/victoryResolver.js";
 import { createTechnologyState, resolveResearchForEmpire } from "../assets/js/core/technologyResolver.js";
 import { PCG32 } from "../assets/js/core/rng.js";
-import { Star, Fleet, ShipDesign, Race } from "../assets/js/models/entities.js";
-import { DB } from "../assets/js/data/db.js";
+import { buildShipDesign } from "../assets/js/core/shipDesign.js";
+import { Star, Fleet, Race } from "../assets/js/models/entities.js";
 
 const rulesPath = fileURLToPath(new URL("../config/gameRules.json", import.meta.url));
 const rules = JSON.parse(fs.readFileSync(rulesPath, "utf-8"));
 const techFieldsPath = fileURLToPath(new URL("../config/technologyFields.json", import.meta.url));
 const technologyFields = JSON.parse(fs.readFileSync(techFieldsPath, "utf-8")).fields;
 
-const createDesign = (name, hullIndex, engineIndex, weaponIndex, specialIndex) => new ShipDesign({
-    name,
-    hull: DB.hulls[hullIndex],
-    engine: DB.engines[engineIndex],
-    weapon: DB.weapons[weaponIndex],
-    shield: DB.weapons[0],
-    special: DB.specials[specialIndex]
-});
+const createDesign = (name, hullId, componentIds) => {
+    const hull = rules.hulls.find(entry => entry.id === hullId);
+    const result = buildShipDesign({ name, hull, componentIds });
+    return result.design;
+};
 
 const createBaseState = () => {
     const rng = new PCG32(932515789n, 54n);
@@ -38,9 +35,9 @@ const createBaseState = () => {
         star.def.facts = 20;
     });
 
-    const humanDesign = createDesign("Probe", 0, 0, 0, 0);
-    const aiRaider = createDesign("Raider", 0, 1, 1, 0);
-    const aiColonizer = createDesign("Seeder", 1, 1, 0, 1);
+    const humanDesign = createDesign("Probe", "scout", ["ion_drive", "laser_array", "scanner_array"]);
+    const aiRaider = createDesign("Raider", "scout", ["ion_drive", "laser_array", "armor_plating"]);
+    const aiColonizer = createDesign("Seeder", "frigate", ["ion_drive", "laser_array", "colony_pod", "reactor_core"]);
 
     return {
         turnCount: 0,
@@ -56,8 +53,11 @@ const createBaseState = () => {
         fleets: [],
         packets: [],
         minefields: [],
-        designs: [humanDesign],
-        aiDesigns: [aiRaider, aiColonizer],
+        shipDesigns: {
+            1: [humanDesign],
+            2: [aiRaider, aiColonizer]
+        },
+        minefieldIntel: { 1: [] },
         messages: [],
         battles: [],
         sectorScans: [],
@@ -102,7 +102,7 @@ const testAIDecisionLegality = () => {
         x: state.stars[0].x,
         y: state.stars[0].y,
         name: "Raider Wing",
-        design: state.aiDesigns[0]
+        design: state.shipDesigns[2][0]
     }));
 
     const difficulty = { aggression: 0.6, riskTolerance: 0.5, lookaheadDepth: 1 };
@@ -133,7 +133,7 @@ const testScoreCalculation = () => {
         x: state.stars[0].x,
         y: state.stars[0].y,
         name: "Probe",
-        design: state.designs[0]
+        design: state.shipDesigns[1][0]
     }));
     const scores = calculateScores(state);
     const playerOne = scores.find(score => score.playerId === 1);
@@ -163,7 +163,7 @@ const testHeadlessSimulation = () => {
         x: state.stars[0].x,
         y: state.stars[0].y,
         name: "Raider 2",
-        design: state.aiDesigns[0]
+        design: state.shipDesigns[2][0]
     }));
     state.fleets.push(new Fleet({
         id: state.nextFleetId++,
@@ -171,7 +171,7 @@ const testHeadlessSimulation = () => {
         x: state.stars[1].x,
         y: state.stars[1].y,
         name: "Raider 3",
-        design: state.aiDesigns[0]
+        design: state.shipDesigns[2][0]
     }));
 
     const difficulty = { aggression: 0.6, riskTolerance: 0.5, lookaheadDepth: 1 };
