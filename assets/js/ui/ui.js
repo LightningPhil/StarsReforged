@@ -9,8 +9,6 @@ export const bindRenderer = (rendererRef) => {
 };
 
 export const UI = {
-    empireCache: { taxTotal: 0, industrialOutput: 0 },
-
     init: function() {
         this.renderTech();
         this.popDropdowns();
@@ -40,7 +38,47 @@ export const UI = {
             Game.sendMessage(recipientId, text);
             document.getElementById('msg-text').value = '';
             this.updateComms();
+            this.updateEmpire();
         });
+    },
+
+    saveDesign: function() {
+        Game.saveDesign();
+        this.updateDesignList();
+        this.updateSide();
+        this.updateComms();
+    },
+
+    queueBuild: function(star, index) {
+        Game.queueBuild(star, index);
+        this.updateHeader();
+        this.updateSide();
+        this.updateComms();
+    },
+
+    queueStructure: function(star, kind, count) {
+        Game.queueStructure(star, kind, count);
+        this.updateHeader();
+        this.updateSide();
+        this.updateComms();
+    },
+
+    scanSector: function(star) {
+        Game.scanSector(star);
+        this.updateSide();
+    },
+
+    launchPacket: function(starId) {
+        Game.launchPacket(starId);
+        this.updateHeader();
+        this.updateSide();
+        this.updateComms();
+    },
+
+    placeMinefield: function(fleet) {
+        Game.placeMinefield(fleet);
+        this.updateSide();
+        this.updateComms();
     },
 
     setScreen: function(id) {
@@ -75,7 +113,7 @@ export const UI = {
         document.getElementById('emp-pop').innerText = pop.toLocaleString();
         document.getElementById('emp-tax').innerText = `${tax}cr`;
         document.getElementById('emp-maint').innerText = `-${Game.fleets.filter(f => f.owner === 1).length * 10}cr`;
-        document.getElementById('emp-ind').innerText = `${this.empireCache.industrialOutput}`;
+        document.getElementById('emp-ind').innerText = `${Game.empireCache.industrialOutput}`;
         document.getElementById('emp-vis').innerText = Game.stars.filter(s => s.visible).length;
         document.getElementById('emp-known').innerText = Game.stars.filter(s => s.known).length;
         document.getElementById('emp-fleets').innerText = Game.fleets.filter(f => f.owner === 1).length;
@@ -128,6 +166,25 @@ export const UI = {
                 battleBody.innerText = `BATTLE: ${b.location}\nATTACKER: ${b.attacker}\nDEFENDER: ${b.defender}\nRESULT: ${b.result.toUpperCase()}\n\n${b.details}`;
             };
             battleList.appendChild(row);
+        });
+
+        const logList = document.getElementById('turn-log-list');
+        const logBody = document.getElementById('turn-log-body');
+        logList.innerHTML = '';
+        if (!Game.logs.length) {
+            logBody.innerText = 'No logs recorded.';
+        }
+        Game.logs.slice(0, 12).forEach(log => {
+            const row = document.createElement('div');
+            row.style.padding = '5px';
+            row.style.borderBottom = '1px solid #223';
+            row.style.cursor = 'pointer';
+            row.innerHTML = `<span style="color:#0ff">> ${log.turn}</span> <span style="color:#aa0">[${log.events.length} events]</span> RNG ${log.rngRolls.length}`;
+            row.onclick = () => {
+                const checksum = log.checksum ? log.checksum.toString(16) : '0';
+                logBody.innerText = `TURN ${log.turn}\nCHECKSUM: ${checksum}\nRNG ROLLS: ${log.rngRolls.length}\nEVENTS:\n- ${log.events.join('\n- ') || 'None'}`;
+            };
+            logList.appendChild(row);
         });
 
         const recip = document.getElementById('msg-recipient');
@@ -231,14 +288,16 @@ export const UI = {
             btn.addEventListener('click', () => {
                 if (!Game.selection || Game.selection.type !== 'star') {
                     Game.logMsg('Select a star to queue production.', 'Industry');
+                    this.updateComms();
                     return;
                 }
                 const star = Game.stars[Game.selection.id];
                 if (star.owner !== 1) {
                     Game.logMsg('Star not under your control.', 'Industry');
+                    this.updateComms();
                     return;
                 }
-                Game.queueBuild(star, index);
+                this.queueBuild(star, index);
             });
             row.appendChild(btn);
             list.appendChild(row);
@@ -320,10 +379,10 @@ export const UI = {
 
             h += `<div class="panel-block"><h3>Planetary Build</h3>`;
             if (!star.queue) {
-                h += `<button class="action" onclick="Game.queueStructure(Game.stars[${star.id}], 'mine', 10)">Add 10 Mines (${DB.structures.mine.cost * 10}cr)</button>`;
-                h += `<button class="action" onclick="Game.queueStructure(Game.stars[${star.id}], 'factory', 10)">Add 10 Factories (${DB.structures.factory.cost * 10}cr)</button>`;
+                h += `<button class="action" onclick="UI.queueStructure(Game.stars[${star.id}], 'mine', 10)">Add 10 Mines (${DB.structures.mine.cost * 10}cr)</button>`;
+                h += `<button class="action" onclick="UI.queueStructure(Game.stars[${star.id}], 'factory', 10)">Add 10 Factories (${DB.structures.factory.cost * 10}cr)</button>`;
                 if (!star.def.base) {
-                    h += `<button class="action" onclick="Game.queueStructure(Game.stars[${star.id}], 'base', 1)">Construct Starbase (${DB.structures.base.cost}cr)</button>`;
+                    h += `<button class="action" onclick="UI.queueStructure(Game.stars[${star.id}], 'base', 1)">Construct Starbase (${DB.structures.base.cost}cr)</button>`;
                 }
             } else {
                 h += `<div style="font-size:12px; color:#667;">Construction queue active.</div>`;
@@ -331,7 +390,7 @@ export const UI = {
             h += `</div>`;
 
             h += `<div class="panel-block"><h3>Sector Scan</h3>`;
-            h += `<button class="action" onclick="Game.scanSector(Game.stars[${star.id}])">RUN SECTOR SCAN</button>`;
+            h += `<button class="action" onclick="UI.scanSector(Game.stars[${star.id}])">RUN SECTOR SCAN</button>`;
             h += `</div>`;
 
             const targets = Game.stars.filter(s => s.owner === 1 && s.id !== star.id);
@@ -339,7 +398,7 @@ export const UI = {
             h += `<div class="panel-block"><h3>Mass Driver</h3>`;
             h += `<div class="stat-row"><span>Target</span> <select id="driver-target"><option value="">Select</option>${targetOptions}</select></div>`;
                 h += `<div class="stat-row"><span>Amount</span> <span class="val"><input id="driver-amount" type="range" min="0" max="500" value="0" style="width:140px;"></span></div>`;
-                h += `<button class="action" onclick="Game.launchPacket(${star.id})">LAUNCH PACKET</button>`;
+                h += `<button class="action" onclick="UI.launchPacket(${star.id})">LAUNCH PACKET</button>`;
                 h += `</div>`;
             }
 
@@ -351,7 +410,7 @@ export const UI = {
             h += `<div class="stat-row"><span>Range</span> <span class="val">${fleet.design.range}</span></div>`;
             h += `<div class="stat-row"><span>Mission</span> <span class="val">${fleet.dest ? 'Transit' : 'Orbit'}</span></div>`;
             if (fleet.design.flags.includes('minelayer')) {
-                h += `<button class="action" onclick="Game.placeMinefield(Game.fleets[${Game.selection.id}])">DEPLOY MINEFIELD</button>`;
+                h += `<button class="action" onclick="UI.placeMinefield(Game.fleets[${Game.selection.id}])">DEPLOY MINEFIELD</button>`;
             }
             h += `<button class="action" style="border-color:var(--c-alert); color:var(--c-alert)">SCRAP FLEET</button>`;
         }

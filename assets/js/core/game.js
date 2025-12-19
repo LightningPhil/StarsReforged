@@ -1,7 +1,7 @@
 import { DB } from "../data/db.js";
 import { Fleet, Message, Minefield, Race, ResourcePacket, ShipDesign, Star } from "../models/entities.js";
 import { PCG32 } from "./rng.js";
-import { dist } from "./utils.js";
+import { dist, intSqrt } from "./utils.js";
 
 let ui = null;
 let renderer = null;
@@ -32,6 +32,9 @@ export const Game = {
     messages: [],
     battles: [],
     sectorScans: [],
+    logs: [],
+    turnHash: 0n,
+    empireCache: { taxTotal: 0, industrialOutput: 0 },
     research: {
         field: 0,
         levels: [0, 0, 0, 0, 0, 0],
@@ -41,6 +44,7 @@ export const Game = {
     rngSeed: 932515789n,
     rng: null,
     nextFleetId: 1,
+    nextPacketId: 1,
     race: new Race({
         name: 'The Ashen Arc',
         type: 'Synthetic Nomads',
@@ -61,10 +65,12 @@ export const Game = {
         ctx: null
     },
     isGameOver: false,
+    currentTurnLog: null,
 
     init: function() {
         this.minerals = this.mineralStock.i + this.mineralStock.b + this.mineralStock.g;
         this.rng = new PCG32(this.rngSeed, 54n);
+        this.turnHash = this.hashTurnSeed(this.rngSeed, BigInt(this.turnCount));
         this.designs.push(new ShipDesign({
             name: "Probe v1",
             hull: DB.hulls[0],
@@ -93,12 +99,72 @@ export const Game = {
         this.updateVisibility();
     },
 
+    hashMix: function(hash, value) {
+        const mask = (1n << 64n) - 1n;
+        const mixed = (hash ^ value) * 0x9e3779b97f4a7c15n;
+        return mixed & mask;
+    },
+
+    hashString: function(text) {
+        let hash = 0xcbf29ce484222325n;
+        for (let i = 0; i < text.length; i++) {
+            hash = this.hashMix(hash, BigInt(text.charCodeAt(i)));
+        }
+        return hash;
+    },
+
+    hashTurnSeed: function(previousHash, turnNumber) {
+        let hash = this.hashMix(previousHash, turnNumber);
+        hash = this.hashMix(hash, 0x94d049bb133111ebn);
+        return hash;
+    },
+
+    startTurnLog: function() {
+        this.currentTurnLog = {
+            turn: this.year,
+            events: [],
+            rngRolls: [],
+            checksum: 0n
+        };
+    },
+
+    finalizeTurnLog: function() {
+        if (!this.currentTurnLog) {
+            return;
+        }
+        let checksum = this.hashMix(0x100000001b3n, BigInt(this.year));
+        this.currentTurnLog.events.forEach(event => {
+            checksum = this.hashMix(checksum, this.hashString(event));
+        });
+        this.currentTurnLog.rngRolls.forEach(roll => {
+            checksum = this.hashMix(checksum, BigInt(roll));
+        });
+        this.currentTurnLog.checksum = checksum;
+        this.logs.unshift(this.currentTurnLog);
+        this.turnHash = checksum;
+        this.currentTurnLog = null;
+    },
+
+    addEvent: function(text) {
+        if (this.currentTurnLog) {
+            this.currentTurnLog.events.push(text);
+        }
+    },
+
+    roll: function(max) {
+        const value = this.rng.nextInt(max);
+        if (this.currentTurnLog) {
+            this.currentTurnLog.rngRolls.push(value);
+        }
+        return value;
+    },
+
     generateGalaxy: function(count) {
         for (let i = 0; i < count; i++) {
             this.stars.push(new Star({
                 id: i,
-                x: this.rng.nextInt(3200),
-                y: this.rng.nextInt(3200),
+                x: this.roll(3200),
+                y: this.roll(3200),
                 name: `S-${120 + i}`,
                 owner: null,
                 rng: this.rng
@@ -179,39 +245,51 @@ export const Game = {
         }
         this.year++;
         this.turnCount++;
+        this.startTurnLog();
 
+        const seeded = this.hashTurnSeed(this.turnHash, BigInt(this.turnCount));
+        this.rngSeed = seeded;
+        this.rng = new PCG32(seeded, 54n);
+        this.addEvent(`Turn ${this.year} initiated.`);
+
+        this.validateOrders();
         this.processPackets();
         this.processFleets();
-        this.processPlanets();
+        this.processBombing();
+        this.processPopulationGrowth();
+        this.processProduction();
         this.processResearch();
-        this.processAI();
+        this.processIntelligence();
+        this.checkVictory();
 
+        this.processAI();
         this.updateVisibility();
+        this.finalizeTurnLog();
         renderer.cam.dirty = true;
         ui.updateHeader();
         ui.updateSide();
         ui.updateEmpire();
         ui.updateFleets();
+        ui.updateResearch();
+        ui.updateComms();
         this.playSound(140, 0.08);
+    },
 
-        this.checkVictory();
+    validateOrders: function() {
+        this.addEvent("Orders validated.");
     },
 
     processPackets: function() {
-        this.packets = this.packets.filter(packet => {
-            const dx = packet.destX - packet.x;
-            const dy = packet.destY - packet.y;
-            const dist = Math.hypot(dx, dy);
-            const speed = 80;
-            if (dist <= speed) {
-                packet.x = packet.destX;
-                packet.y = packet.destY;
+        this.packets = this.packets
+            .sort((a, b) => a.id - b.id)
+            .filter(packet => {
+                const speed = 80;
+                if (this.stepToward(packet, packet.destX, packet.destY, speed)) {
                 if (packet.owner === 1) {
                     this.mineralStock.i += Math.floor(packet.payload * 0.4);
                     this.mineralStock.b += Math.floor(packet.payload * 0.3);
                     this.mineralStock.g += Math.floor(packet.payload * 0.3);
                     this.minerals = this.mineralStock.i + this.mineralStock.b + this.mineralStock.g;
-                    ui.updateHeader();
                     this.logMsg(`Resource packet delivered to ${this.stars[packet.destId]?.name || 'target'}.`, "Industry");
                 } else if (packet.owner === 2) {
                     this.aiMineralStock.i += Math.floor(packet.payload * 0.4);
@@ -220,25 +298,36 @@ export const Game = {
                     this.aiMinerals = this.aiMineralStock.i + this.aiMineralStock.b + this.aiMineralStock.g;
                 }
                 return false;
-            } else {
-                const angle = Math.atan2(dy, dx);
-                packet.x += Math.cos(angle) * speed;
-                packet.y += Math.sin(angle) * speed;
+                }
                 return true;
-            }
-        });
+            });
+    },
+
+    stepToward: function(entity, destX, destY, speed) {
+        const dx = destX - entity.x;
+        const dy = destY - entity.y;
+        const distance = intSqrt(dx * dx + dy * dy);
+        if (distance <= speed) {
+            entity.x = destX;
+            entity.y = destY;
+            return true;
+        }
+        const scale = Math.floor((speed * 1000) / distance);
+        entity.x += Math.floor((dx * scale) / 1000);
+        entity.y += Math.floor((dy * scale) / 1000);
+        return false;
     },
 
     processFleets: function() {
-        this.fleets.forEach(fleet => {
+        this.fleets
+            .slice()
+            .sort((a, b) => a.id - b.id)
+            .forEach(fleet => {
             if (!fleet.dest) {
                 return;
             }
-            const dx = fleet.dest.x - fleet.x;
-            const dy = fleet.dest.y - fleet.y;
-            const dist = Math.hypot(dx, dy);
             const speed = fleet.speed;
-            const fuelUse = Math.max(1, speed / 60);
+            const fuelUse = Math.max(1, Math.floor(speed / 60));
 
             if (fleet.fuel <= 0) {
                 fleet.dest = null;
@@ -246,62 +335,75 @@ export const Game = {
                 return;
             }
 
-            if (dist <= speed) {
-                fleet.x = fleet.dest.x;
-                fleet.y = fleet.dest.y;
+            if (this.stepToward(fleet, fleet.dest.x, fleet.dest.y, speed)) {
                 fleet.dest = null;
                 fleet.fuel = Math.max(0, fleet.fuel - fuelUse * 2);
                 this.handleArrival(fleet);
             } else {
-                const angle = Math.atan2(dy, dx);
-                fleet.x += Math.cos(angle) * speed;
-                fleet.y += Math.sin(angle) * speed;
                 fleet.fuel = Math.max(0, fleet.fuel - fuelUse);
             }
         });
     },
 
-    processPlanets: function() {
+    processBombing: function() {
+        this.addEvent("Bombing resolution complete.");
+    },
+
+    processPopulationGrowth: function() {
+        const growthPermille = 1020 + (this.research.levels[5] * 5);
+        this.stars
+            .filter(s => s.owner)
+            .sort((a, b) => a.id - b.id)
+            .forEach(star => {
+                const grown = Math.floor((star.pop * growthPermille) / 1000);
+                star.pop = Math.min(1500000, grown);
+            });
+        this.addEvent("Population growth resolved.");
+    },
+
+    processProduction: function() {
         let taxTotal = 0;
         let industrialOutput = 0;
-        this.stars.filter(s => s.owner).forEach(star => {
-            const growthRate = 1 + 0.02 + (this.research.levels[5] * 0.005);
-            star.pop = Math.min(1500000, Math.floor(star.pop * growthRate));
-            const income = Math.floor(star.pop / 900);
-            const iGain = Math.floor((star.def.mines * star.mins.i) / 120);
-            const bGain = Math.floor((star.def.mines * star.mins.b) / 120);
-            const gGain = Math.floor((star.def.mines * star.mins.g) / 120);
+        this.stars
+            .filter(s => s.owner)
+            .sort((a, b) => a.id - b.id)
+            .forEach(star => {
+                const income = Math.floor(star.pop / 900);
+                const iGain = Math.floor((star.def.mines * star.mins.i) / 120);
+                const bGain = Math.floor((star.def.mines * star.mins.b) / 120);
+                const gGain = Math.floor((star.def.mines * star.mins.g) / 120);
 
-            if (star.owner === 1) {
-                taxTotal += income;
-                industrialOutput += star.def.facts;
-                this.mineralStock.i += iGain;
-                this.mineralStock.b += bGain;
-                this.mineralStock.g += gGain;
-            } else if (star.owner === 2) {
-                this.aiCredits += income;
-                this.aiMineralStock.i += iGain;
-                this.aiMineralStock.b += bGain;
-                this.aiMineralStock.g += gGain;
-            }
+                if (star.owner === 1) {
+                    taxTotal += income;
+                    industrialOutput += star.def.facts;
+                    this.mineralStock.i += iGain;
+                    this.mineralStock.b += bGain;
+                    this.mineralStock.g += gGain;
+                } else if (star.owner === 2) {
+                    this.aiCredits += income;
+                    this.aiMineralStock.i += iGain;
+                    this.aiMineralStock.b += bGain;
+                    this.aiMineralStock.g += gGain;
+                }
 
-            if (star.queue) {
-                star.queue.done += star.def.facts;
-                if (star.queue.done >= star.queue.cost) {
-                    if (star.queue.type === 'ship') {
-                        this.buildComplete(star, star.queue.bp, star.queue.owner);
-                    } else if (star.queue.type === 'structure') {
-                        this.completeStructure(star, star.queue);
+                if (star.queue) {
+                    star.queue.done += star.def.facts;
+                    if (star.queue.done >= star.queue.cost) {
+                        if (star.queue.type === 'ship') {
+                            this.buildComplete(star, star.queue.bp, star.queue.owner);
+                        } else if (star.queue.type === 'structure') {
+                            this.completeStructure(star, star.queue);
+                        }
                     }
                 }
-            }
-        });
+            });
 
         this.minerals = this.mineralStock.i + this.mineralStock.b + this.mineralStock.g;
         this.aiMinerals = this.aiMineralStock.i + this.aiMineralStock.b + this.aiMineralStock.g;
 
         this.credits += taxTotal;
-        ui.empireCache = { taxTotal, industrialOutput };
+        this.empireCache = { taxTotal, industrialOutput };
+        this.addEvent("Production resolved.");
     },
 
     processResearch: function() {
@@ -314,11 +416,15 @@ export const Game = {
             this.research.progress = 0;
             this.logMsg(`${DB.techs[this.research.field].name} Tech Advanced to Level ${this.research.levels[this.research.field]}`, "Research");
         }
-        ui.updateResearch();
+        this.addEvent("Research resolved.");
+    },
+
+    processIntelligence: function() {
+        this.addEvent("Intelligence updates resolved.");
     },
 
     processAI: function() {
-        const aiStars = this.stars.filter(s => s.owner === 2);
+        const aiStars = this.stars.filter(s => s.owner === 2).sort((a, b) => a.id - b.id);
         if (!aiStars.length) {
             return;
         }
@@ -334,21 +440,24 @@ export const Game = {
 
         const raiderDesign = this.aiDesigns[0];
         aiStars.filter(s => !s.queue).forEach(star => {
-            if (this.aiCredits > (raiderDesign?.cost || 0) && this.rng.nextInt(100) < 25) {
+            if (this.aiCredits > (raiderDesign?.cost || 0) && this.roll(100) < 25) {
                 this.queueBuild(star, 0, 2);
             }
         });
 
-        this.fleets.filter(f => f.owner === 2 && !f.dest).forEach(f => {
-            const unowned = this.stars.filter(s => !s.owner);
-            const enemy = this.stars.filter(s => s.owner === 1);
+        this.fleets
+            .filter(f => f.owner === 2 && !f.dest)
+            .sort((a, b) => a.id - b.id)
+            .forEach(f => {
+            const unowned = this.stars.filter(s => !s.owner).sort((a, b) => a.id - b.id);
+            const enemy = this.stars.filter(s => s.owner === 1).sort((a, b) => a.id - b.id);
             const pool = unowned.length ? unowned : enemy;
             if (!pool.length) {
                 return;
             }
             const target = pool.reduce((best, star) => {
                 const d = dist(f, star);
-                if (!best || d < best.dist) {
+                if (!best || d < best.dist || (d === best.dist && star.id < best.star.id)) {
                     return { star, dist: d };
                 }
                 return best;
@@ -416,12 +525,10 @@ export const Game = {
         const weapon = DB.weapons.find(w => w.id === document.getElementById('des-wep').value);
         const shield = DB.weapons.find(w => w.id === document.getElementById('des-shi').value);
         const special = DB.specials.find(s => s.id === document.getElementById('des-spec').value);
-        const name = document.getElementById('des-name').value || `Design-${this.rng.nextInt(99)}`;
+        const name = document.getElementById('des-name').value || `Design-${this.roll(99)}`;
 
         const design = new ShipDesign({ name, hull, engine, weapon, shield, special });
         this.designs.push(design);
-        ui.updateDesignList();
-        ui.updateSide();
         this.logMsg(`New Ship Design "${design.name}" saved.`, "Engineering");
     },
 
@@ -444,8 +551,6 @@ export const Game = {
         }
         star.queue = { type: 'ship', bp: blueprint, cost: blueprint.cost, done: 0, owner: ownerId };
         if (ownerId === 1) {
-            ui.updateHeader();
-            ui.updateSide();
             this.logMsg(`Construction of ${blueprint.name} started at ${star.name}.`, "Industry");
         }
     },
@@ -476,8 +581,6 @@ export const Game = {
         }
         star.queue = { type: 'structure', kind, count, cost, done: 0, owner: ownerId };
         if (ownerId === 1) {
-            ui.updateHeader();
-            ui.updateSide();
             this.logMsg(`Construction of ${structure.name} queued at ${star.name}.`, "Industry");
         }
     },
@@ -488,14 +591,14 @@ export const Game = {
             owner: ownerId,
             x: star.x,
             y: star.y,
-            name: `${blueprint.name} ${this.rng.nextInt(99)}`,
+            name: `${blueprint.name} ${this.roll(99)}`,
             design: blueprint
         }));
     },
 
     logMsg: function(text, sender, priority = 'normal', recipient = 'All') {
         this.messages.unshift(new Message({ turn: this.year, sender, recipient, text, priority }));
-        ui.updateComms();
+        this.addEvent(`${sender}: ${text}`);
     },
 
     sendMessage: function(recipientId, text) {
@@ -517,7 +620,6 @@ export const Game = {
         } else {
             this.logMsg("Message received. The Directorate remains vigilant.", "Crimson Directorate", "normal", "Ashen Arc");
         }
-        ui.updateEmpire();
     },
 
     checkVictory: function() {
@@ -534,15 +636,15 @@ export const Game = {
     },
 
     generateCombat: function(attacker, defenderStar) {
-        const attackPower = attacker.design.bv + this.rng.nextInt(30);
+        const attackPower = attacker.design.bv + this.roll(30);
         const defensePower = (defenderStar.def.base ? 120 : 40) + defenderStar.def.mines;
         const rounds = [];
         let attackerHP = attacker.hp;
         let defenderHP = defensePower * 2;
 
         for (let round = 1; round <= 3; round++) {
-            const atk = attacker.design.weapon.dmg + this.rng.nextInt(10);
-            const def = Math.floor(defensePower / 4) + this.rng.nextInt(8);
+            const atk = attacker.design.weapon.dmg + this.roll(10);
+            const def = Math.floor(defensePower / 4) + this.roll(8);
             defenderHP -= atk;
             attackerHP -= def;
             rounds.push(`Round ${round}: ${attacker.name} hits for ${atk}. Defenses reply for ${def}.`);
@@ -550,6 +652,7 @@ export const Game = {
 
         const result = attackerHP > defenderHP ? 'attacker' : 'defender';
         const battleLog = `Combat at ${defenderStar.name}: ${attacker.name} engaged defenses. Outcome: ${result.toUpperCase()}.`;
+        this.addEvent(`Combat roll ${attackPower} at ${defenderStar.name}.`);
         this.battles.unshift({
             id: `${this.year}-${defenderStar.id}-${attacker.id}`,
             turn: this.year,
@@ -628,6 +731,7 @@ export const Game = {
         }
         const target = this.stars[targetId];
         this.packets.push(new ResourcePacket({
+            id: this.nextPacketId++,
             x: origin.x,
             y: origin.y,
             destX: target.x,
@@ -636,26 +740,34 @@ export const Game = {
             payload: amount,
             owner: 1
         }));
-        ui.updateHeader();
         this.logMsg(`Mass driver packet launched to ${target.name}.`, "Industry");
     },
 
     updateVisibility: function() {
         this.activeScanners = [];
         this.sectorScans = this.sectorScans.filter(scan => scan.expires >= this.turnCount);
-        this.stars.forEach(star => {
+        this.stars
+            .slice()
+            .sort((a, b) => a.id - b.id)
+            .forEach(star => {
             if (star.owner === 1) {
                 this.activeScanners.push({ x: star.x, y: star.y, r: 260, owner: 1 });
             }
         });
-        this.fleets.forEach(fleet => {
+        this.fleets
+            .slice()
+            .sort((a, b) => a.id - b.id)
+            .forEach(fleet => {
             if (fleet.owner === 1) {
                 this.activeScanners.push({ x: fleet.x, y: fleet.y, r: fleet.scan, owner: 1 });
             }
         });
         this.sectorScans.forEach(scan => this.activeScanners.push(scan));
 
-        this.stars.forEach(star => {
+        this.stars
+            .slice()
+            .sort((a, b) => a.id - b.id)
+            .forEach(star => {
             const visible = this.activeScanners.some(scan => dist(scan, star) <= scan.r);
             if (visible) {
                 star.visible = true;

@@ -98,6 +98,11 @@
                     <div id="battle-body" style="font-size:12px; color:#fff; white-space:pre-line; margin-top:10px;">No engagements logged.</div>
                 </div>
                 <div class="card">
+                    <h3>Turn Log</h3>
+                    <div id="turn-log-list" style="font-size:12px; height: 150px; overflow-y:auto;"></div>
+                    <div id="turn-log-body" style="font-size:12px; color:#fff; white-space:pre-line; margin-top:10px;">No logs recorded.</div>
+                </div>
+                <div class="card">
                     <h3>Transmit</h3>
                     <div class="stat-row"><span>To:</span> <select id="msg-recipient"></select></div>
                     <textarea id="msg-text" placeholder="Compose transmission..."></textarea>
@@ -118,7 +123,7 @@
                     <div class="stat-row">Shield: <select id="des-shi"></select></div>
                     <div class="stat-row">Special: <select id="des-spec"></select></div>
                     <input type="text" id="des-name" value="New Ship Class" style="width:100%; margin-top:10px;">
-                    <button class="action" onclick="Game.saveDesign()">SAVE BLUEPRINT</button>
+                    <button class="action" onclick="UI.saveDesign()">SAVE BLUEPRINT</button>
                 </div>
                 <div class="card">
                     <h3>Simulated Specs</h3>

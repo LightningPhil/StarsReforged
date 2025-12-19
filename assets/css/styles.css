@@ -250,7 +250,7 @@ select, input[type="text"], input[type="range"] {
 }
 
 .comms-grid {
-    grid-template-columns: 1fr 2fr 1fr;
+    grid-template-columns: repeat(4, minmax(220px, 1fr));
 }
 
 textarea {
@@ -262,4 +262,3 @@ textarea {
     width: 100%;
     min-height: 120px;
 }
-
