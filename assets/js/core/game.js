@@ -5,7 +5,18 @@ import { dist, intSqrt } from "./utils.js";
 import { TurnEngine } from "./turnEngine.js";
 import { AIController } from "../ai/AIController.js";
 import { loadConfig } from "./config.js";
-import { evaluateVictory, resolveDefeats, calculateScores } from "./gameResolution.js";
+import { calculateScores, resolveDefeats } from "./gameResolution.js";
+import { VictoryResolver } from "./victoryResolver.js";
+import {
+    adjustAllocationForField,
+    calculateEmpireResearchPoints,
+    createTechnologyState,
+    getRpToNextLevel,
+    getTechnologyModifiers,
+    getTechnologyStateForEmpire,
+    normalizeAllocation,
+    resolveResearchForEmpire
+} from "./technologyResolver.js";
 
 let ui = null;
 let renderer = null;
@@ -47,12 +58,9 @@ export const Game = {
     aiDifficulty: "normal",
     gameResult: null,
     scores: [],
-    research: {
-        field: 0,
-        levels: [0, 0, 0, 0, 0, 0],
-        progress: 0,
-        budget: 15
-    },
+    state: "RUNNING",
+    winnerEmpireId: null,
+    researchFocus: null,
     rngSeed: 932515789n,
     rng: null,
     nextFleetId: 1,
@@ -76,7 +84,6 @@ export const Game = {
     audio: {
         ctx: null
     },
-    isGameOver: false,
     currentTurnLog: null,
 
     init: async function() {
@@ -85,6 +92,7 @@ export const Game = {
         this.aiConfig = configs.ai;
         this.aiDifficulty = configs.ai.defaultDifficulty || "normal";
         this.setupPlayers();
+        this.researchFocus = this.rules.technologyFields?.[0]?.id || null;
         this.minerals = this.mineralStock.i + this.mineralStock.b + this.mineralStock.g;
         this.rng = new PCG32(this.rngSeed, 54n);
         this.turnHash = this.hashTurnSeed(this.rngSeed, BigInt(this.turnCount));
@@ -142,9 +150,22 @@ export const Game = {
 
     setupPlayers: function() {
         const aiPlayers = this.aiConfig?.aiPlayers || [2];
+        const techFields = this.rules?.technologyFields || [];
         this.players = [
-            { id: 1, type: "human", status: "active", eliminatedAtTurn: null },
-            ...aiPlayers.map(id => ({ id, type: "ai", status: "active", eliminatedAtTurn: null }))
+            {
+                id: 1,
+                type: "human",
+                status: "active",
+                eliminatedAtTurn: null,
+                technology: createTechnologyState(techFields)
+            },
+            ...aiPlayers.map(id => ({
+                id,
+                type: "ai",
+                status: "active",
+                eliminatedAtTurn: null,
+                technology: createTechnologyState(techFields)
+            }))
         ];
 
         const humanStart = this.rules?.startingResources?.human || { credits: 1000, mineralStock: { i: 2000, b: 1500, g: 1500 } };
@@ -297,7 +318,7 @@ export const Game = {
     },
 
     turn: function() {
-        if (this.isGameOver) {
+        if (this.state === "ENDED") {
             this.logMsg("Victory declared. No further turns possible.", "System", "high");
             return;
         }
@@ -343,7 +364,10 @@ export const Game = {
         this.sectorScans = nextState.sectorScans;
         this.logs = nextState.logs;
         this.empireCache = nextState.empireCache;
-        this.research = nextState.research;
+        this.rules = nextState.rules || this.rules;
+        this.state = nextState.state ?? this.state;
+        this.winnerEmpireId = nextState.winnerEmpireId ?? this.winnerEmpireId;
+        this.researchFocus = nextState.researchFocus ?? this.researchFocus;
         this.nextFleetId = nextState.nextFleetId;
         this.nextPacketId = nextState.nextPacketId;
         this.orders = nextState.orders;
@@ -434,12 +458,13 @@ export const Game = {
     },
 
     processPopulationGrowth: function() {
-        const growthPermille = 1020 + (this.research.levels[5] * 5);
         this.stars
             .filter(s => s.owner)
             .sort((a, b) => a.id - b.id)
             .forEach(star => {
-                const grown = Math.floor((star.pop * growthPermille) / 1000);
+                const techState = getTechnologyStateForEmpire(this, star.owner);
+                const modifiers = getTechnologyModifiers(techState);
+                const grown = Math.floor(star.pop * 1.02 * modifiers.populationGrowth);
                 star.pop = Math.min(1500000, grown);
             });
         this.addEvent("Population growth resolved.");
@@ -496,15 +521,12 @@ export const Game = {
     },
 
     processResearch: function() {
-        const budget = Math.floor((this.credits * this.research.budget) / 1000);
-        this.research.progress += budget;
-        const cost = this.researchCost(this.research.field);
-
-        if (this.research.progress >= cost) {
-            this.research.levels[this.research.field]++;
-            this.research.progress = 0;
-            this.logMsg(`${DB.techs[this.research.field].name} Tech Advanced to Level ${this.research.levels[this.research.field]}`, "Research");
+        const techState = getTechnologyStateForEmpire(this, 1);
+        if (!techState) {
+            return;
         }
+        const totalRP = calculateEmpireResearchPoints(this, 1);
+        resolveResearchForEmpire(techState, totalRP, this.rules);
         this.addEvent("Research resolved.");
     },
 
@@ -605,18 +627,21 @@ export const Game = {
         if (!blueprint) {
             return;
         }
+        const techState = getTechnologyStateForEmpire(this, ownerId);
+        const modifiers = getTechnologyModifiers(techState);
+        const adjustedCost = Math.ceil(blueprint.cost * modifiers.shipCost);
         const economy = this.economy?.[ownerId];
-        if (!economy || economy.credits < blueprint.cost) {
+        if (!economy || economy.credits < adjustedCost) {
             if (ownerId === 1) {
                 this.logMsg(`Insufficient credits to build ${blueprint.name}.`, "Industry");
             }
             return;
         }
-        economy.credits -= blueprint.cost;
+        economy.credits -= adjustedCost;
         if (ownerId === 1) {
             this.credits = economy.credits;
         }
-        star.queue = { type: 'ship', bp: blueprint, cost: blueprint.cost, done: 0, owner: ownerId };
+        star.queue = { type: 'ship', bp: blueprint, cost: adjustedCost, done: 0, owner: ownerId };
         if (ownerId === 1) {
             this.logMsg(`Construction of ${blueprint.name} started at ${star.name}.`, "Industry");
         }
@@ -690,16 +715,17 @@ export const Game = {
 
     resolveEndOfTurn: function() {
         resolveDefeats(this);
-        this.scores = calculateScores(this, this.rules);
-        const outcome = evaluateVictory(this, this.rules);
-        if (!outcome.isGameOver) {
+        this.scores = calculateScores(this);
+        const outcome = VictoryResolver.check(this);
+        if (!outcome) {
             return;
         }
-        this.isGameOver = true;
-        this.gameResult = outcome.gameResult;
+        this.state = "ENDED";
+        this.winnerEmpireId = outcome.winnerEmpireId;
+        this.gameResult = outcome;
         this.turnEvents.push({ type: "GAME_OVER", turn: this.turnCount });
-        this.turnEvents.push({ type: "VICTORY_DECLARED", winnerId: outcome.gameResult.winnerId, reason: outcome.reason });
-        if (outcome.gameResult.winnerId === 1) {
+        this.turnEvents.push({ type: "VICTORY_DECLARED", winnerId: outcome.winnerEmpireId, reason: outcome.victoryType });
+        if (outcome.winnerEmpireId === 1) {
             this.logMsg("All systems unified under your banner. Victory achieved.", "System", "high");
         } else {
             this.logMsg("The Crimson Directorate has seized the galaxy. Defeat.", "System", "high");
@@ -707,14 +733,15 @@ export const Game = {
     },
 
     generateCombat: function(attacker, defenderStar) {
-        const attackPower = attacker.design.bv + this.roll(30);
+        const attackerModifiers = getTechnologyModifiers(getTechnologyStateForEmpire(this, attacker.owner));
+        const attackPower = Math.floor(attacker.design.bv * attackerModifiers.shipDamage) + this.roll(30);
         const defensePower = (defenderStar.def.base ? 120 : 40) + defenderStar.def.mines;
         const rounds = [];
-        let attackerHP = attacker.hp;
+        let attackerHP = Math.floor(attacker.hp * attackerModifiers.shieldStrength);
         let defenderHP = defensePower * 2;
 
         for (let round = 1; round <= 3; round++) {
-            const atk = attacker.design.weapon.dmg + this.roll(10);
+            const atk = Math.floor(attacker.design.weapon.dmg * attackerModifiers.shipDamage) + this.roll(10);
             const def = Math.floor(defensePower / 4) + this.roll(8);
             defenderHP -= atk;
             attackerHP -= def;
@@ -746,7 +773,8 @@ export const Game = {
     },
 
     scanSector: function(star) {
-        const range = 200 + this.research.levels[4] * 20;
+        const modifiers = getTechnologyModifiers(getTechnologyStateForEmpire(this, 1));
+        const range = Math.floor(200 * modifiers.shipRange);
         this.sectorScans.push({ x: star.x, y: star.y, r: range, owner: 1, expires: this.turnCount + 1 });
         this.updateVisibility();
         renderer.cam.dirty = true;
@@ -757,7 +785,8 @@ export const Game = {
             this.logMsg("This fleet lacks a mine-laying module.", "Command");
             return;
         }
-        const effectiveRange = range || (160 + this.research.levels[4] * 15);
+        const modifiers = getTechnologyModifiers(getTechnologyStateForEmpire(this, fleet.owner));
+        const effectiveRange = range || Math.floor(160 * modifiers.shipRange);
         this.minefields.push(new Minefield({ x: fleet.x, y: fleet.y, radius: effectiveRange, owner: fleet.owner }));
         this.logMsg(`${fleet.name} deployed a minefield.`, "Command");
     },
@@ -834,7 +863,9 @@ export const Game = {
             .sort((a, b) => a.id - b.id)
             .forEach(fleet => {
             if (fleet.owner === 1) {
-                this.activeScanners.push({ x: fleet.x, y: fleet.y, r: fleet.scan, owner: 1 });
+                const modifiers = getTechnologyModifiers(getTechnologyStateForEmpire(this, fleet.owner));
+                const range = Math.floor(fleet.scan * modifiers.shipRange);
+                this.activeScanners.push({ x: fleet.x, y: fleet.y, r: range, owner: 1 });
             }
         });
         this.sectorScans.forEach(scan => this.activeScanners.push(scan));
@@ -874,7 +905,49 @@ export const Game = {
         }
     },
 
-    researchCost: function(field) {
-        return DB.techs[field].baseCost + this.research.levels[field] * 200;
+    getTechnologyFields: function() {
+        return this.rules?.technologyFields || [];
+    },
+
+    getTechnologyState: function(empireId = 1) {
+        return getTechnologyStateForEmpire(this, empireId);
+    },
+
+    getResearchFieldState: function(fieldId, empireId = 1) {
+        const techState = getTechnologyStateForEmpire(this, empireId);
+        const field = techState?.fields?.[fieldId];
+        if (!field) {
+            return null;
+        }
+        return {
+            level: field.level,
+            storedRP: field.storedRP,
+            rpToNextLevel: getRpToNextLevel(field.level, this.rules)
+        };
+    },
+
+    getResearchAllocation: function(empireId = 1) {
+        const techState = getTechnologyStateForEmpire(this, empireId);
+        return techState?.allocation || {};
+    },
+
+    setResearchAllocation: function(allocation, empireId = 1) {
+        const techState = getTechnologyStateForEmpire(this, empireId);
+        if (!techState) {
+            return;
+        }
+        techState.allocation = normalizeAllocation(allocation, this.getTechnologyFields());
+    },
+
+    setResearchAllocationForField: function(fieldId, share, empireId = 1) {
+        const techState = getTechnologyStateForEmpire(this, empireId);
+        if (!techState) {
+            return;
+        }
+        techState.allocation = adjustAllocationForField(techState.allocation, this.getTechnologyFields(), fieldId, share);
+    },
+
+    getEmpireResearchPoints: function(empireId = 1) {
+        return calculateEmpireResearchPoints(this, empireId);
     }
 };

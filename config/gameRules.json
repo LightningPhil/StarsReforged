@@ -1,22 +1,13 @@
 {
-  "maxTurns": 60,
-  "victoryConditions": {
-    "totalDomination": true,
-    "elimination": true,
-    "turnLimit": true
+  "maxTurns": 250,
+  "research": {
+    "baseCost": 100,
+    "costExponent": 1.5,
+    "populationModifier": 0.1
   },
-  "scoring": {
-    "starValue": 1200,
-    "resourceValue": 1,
-    "unitValue": 60,
-    "turnEfficiency": {
-      "enabled": false,
-      "value": 5
-    },
-    "aggression": {
-      "enabled": false,
-      "value": 150
-    }
+  "victory": {
+    "economicSupremacyThreshold": 0.6,
+    "maxTurns": 250
   },
   "startingResources": {
     "human": {

@@ -1,22 +1,13 @@
 export const DEFAULT_RULES = {
-    maxTurns: 60,
-    victoryConditions: {
-        totalDomination: true,
-        elimination: true,
-        turnLimit: true
+    maxTurns: 250,
+    research: {
+        baseCost: 100,
+        costExponent: 1.5,
+        populationModifier: 0.1
     },
-    scoring: {
-        starValue: 1200,
-        resourceValue: 1,
-        unitValue: 60,
-        turnEfficiency: {
-            enabled: false,
-            value: 5
-        },
-        aggression: {
-            enabled: false,
-            value: 150
-        }
+    victory: {
+        economicSupremacyThreshold: 0.6,
+        maxTurns: 250
     },
     startingResources: {
         human: {
@@ -28,6 +19,18 @@ export const DEFAULT_RULES = {
             mineralStock: { i: 1500, b: 1000, g: 1000 }
         }
     }
+};
+
+export const DEFAULT_TECH_FIELDS = {
+    fields: [
+        { id: "WEAP", name: "Weapons", description: "Increases combat damage." },
+        { id: "PROP", name: "Propulsion", description: "Increases ship speed and range." },
+        { id: "CONST", name: "Construction", description: "Reduces ship build cost." },
+        { id: "ELEC", name: "Electronics", description: "Improves targeting and initiative." },
+        { id: "ENER", name: "Energy", description: "Improves shields and power." },
+        { id: "BIOT", name: "Biotechnology", description: "Improves population growth." },
+        { id: "TERR", name: "Terraforming", description: "Improves planet habitability." }
+    ]
 };
 
 export const DEFAULT_AI_CONFIG = {
@@ -69,13 +72,20 @@ const safeFetchJson = async (path, fallback) => {
 };
 
 export const loadConfig = async () => {
-    const [rules, ai] = await Promise.all([
+    const [rules, ai, technologyFields] = await Promise.all([
         safeFetchJson("./config/gameRules.json", DEFAULT_RULES),
-        safeFetchJson("./config/ai.json", DEFAULT_AI_CONFIG)
+        safeFetchJson("./config/ai.json", DEFAULT_AI_CONFIG),
+        safeFetchJson("./config/technologyFields.json", DEFAULT_TECH_FIELDS)
     ]);
 
     return {
-        rules: { ...DEFAULT_RULES, ...rules, scoring: { ...DEFAULT_RULES.scoring, ...(rules?.scoring || {}) } },
+        rules: {
+            ...DEFAULT_RULES,
+            ...rules,
+            research: { ...DEFAULT_RULES.research, ...(rules?.research || {}) },
+            victory: { ...DEFAULT_RULES.victory, ...(rules?.victory || {}) },
+            technologyFields: technologyFields?.fields?.length ? technologyFields.fields : DEFAULT_TECH_FIELDS.fields
+        },
         ai: { ...DEFAULT_AI_CONFIG, ...ai, difficulty: { ...DEFAULT_AI_CONFIG.difficulty, ...(ai?.difficulty || {}) } }
     };
 };

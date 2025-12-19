@@ -4,13 +4,17 @@ import { fileURLToPath } from "node:url";
 import { AIController } from "../assets/js/ai/AIController.js";
 import { OrderResolver } from "../assets/js/core/orderResolver.js";
 import { TurnEngine } from "../assets/js/core/turnEngine.js";
-import { calculateScores, evaluateVictory, resolveDefeats } from "../assets/js/core/gameResolution.js";
+import { calculateScores, resolveDefeats } from "../assets/js/core/gameResolution.js";
+import { VictoryResolver } from "../assets/js/core/victoryResolver.js";
+import { createTechnologyState, resolveResearchForEmpire } from "../assets/js/core/technologyResolver.js";
 import { PCG32 } from "../assets/js/core/rng.js";
 import { Star, Fleet, ShipDesign, Race } from "../assets/js/models/entities.js";
 import { DB } from "../assets/js/data/db.js";
 
 const rulesPath = fileURLToPath(new URL("../config/gameRules.json", import.meta.url));
 const rules = JSON.parse(fs.readFileSync(rulesPath, "utf-8"));
+const techFieldsPath = fileURLToPath(new URL("../config/technologyFields.json", import.meta.url));
+const technologyFields = JSON.parse(fs.readFileSync(techFieldsPath, "utf-8")).fields;
 
 const createDesign = (name, hullIndex, engineIndex, weaponIndex, specialIndex) => new ShipDesign({
     name,
@@ -60,12 +64,10 @@ const createBaseState = () => {
         logs: [],
         turnHash: 0n,
         empireCache: { taxTotal: 0, industrialOutput: 0 },
-        research: {
-            field: 0,
-            levels: [0, 0, 0, 0, 0, 0],
-            progress: 0,
-            budget: 15
-        },
+        state: "RUNNING",
+        winnerEmpireId: null,
+        researchFocus: null,
+        rules: { ...rules, technologyFields },
         rngSeed: 932515789n,
         rng,
         nextFleetId: 1,
@@ -80,8 +82,8 @@ const createBaseState = () => {
         }),
         diplomacy: { status: { 2: "Neutral" }, lastWarning: 0 },
         players: [
-            { id: 1, type: "human", status: "active", eliminatedAtTurn: null },
-            { id: 2, type: "ai", status: "active", eliminatedAtTurn: null }
+            { id: 1, type: "human", status: "active", eliminatedAtTurn: null, technology: createTechnologyState(technologyFields) },
+            { id: 2, type: "ai", status: "active", eliminatedAtTurn: null, technology: createTechnologyState(technologyFields) }
         ],
         orders: [],
         combatReports: [],
@@ -115,9 +117,9 @@ const testVictoryConditions = () => {
     state.stars.forEach(star => {
         star.owner = 1;
     });
-    const outcome = evaluateVictory(state, rules);
-    assert.equal(outcome.isGameOver, true, "Game should end when one player owns all stars");
-    assert.equal(outcome.gameResult.winnerId, 1, "Player 1 should be winner");
+    const outcome = VictoryResolver.check(state);
+    assert.equal(Boolean(outcome), true, "Game should end when one player owns all stars");
+    assert.equal(outcome.winnerEmpireId, 1, "Player 1 should be winner");
 };
 
 const testScoreCalculation = () => {
@@ -133,17 +135,20 @@ const testScoreCalculation = () => {
         name: "Probe",
         design: state.designs[0]
     }));
-    const scores = calculateScores(state, rules);
+    const scores = calculateScores(state);
     const playerOne = scores.find(score => score.playerId === 1);
-    const expected = (2 * rules.scoring.starValue) + ((state.economy[1].credits + state.economy[1].minerals) * rules.scoring.resourceValue) + (1 * rules.scoring.unitValue);
+    const expected = (state.stars[0].pop + state.stars[1].pop)
+        + (2 * 50)
+        + (1 * 10)
+        + (playerOne.totalTechLevels * 25);
     assert.equal(playerOne.score, expected, "Score should match configured formula");
 };
 
 const testHeadlessSimulation = () => {
     const state = createBaseState();
     state.players = [
-        { id: 2, type: "ai", status: "active", eliminatedAtTurn: null },
-        { id: 3, type: "ai", status: "active", eliminatedAtTurn: null }
+        { id: 2, type: "ai", status: "active", eliminatedAtTurn: null, technology: createTechnologyState(technologyFields) },
+        { id: 3, type: "ai", status: "active", eliminatedAtTurn: null, technology: createTechnologyState(technologyFields) }
     ];
     state.economy = {
         2: { credits: 800, mineralStock: { i: 1500, b: 1000, g: 1000 }, minerals: 3500 },
@@ -170,10 +175,11 @@ const testHeadlessSimulation = () => {
     }));
 
     const difficulty = { aggression: 0.6, riskTolerance: 0.5, lookaheadDepth: 1 };
-    const simulationRules = { ...rules, maxTurns: 5, victoryConditions: { ...rules.victoryConditions, turnLimit: true } };
+    const simulationRules = { ...rules, victory: { ...rules.victory, maxTurns: 5 }, technologyFields };
+    state.rules = simulationRules;
 
     let outcome = null;
-    while (state.turnCount < simulationRules.maxTurns) {
+    while (state.turnCount < simulationRules.victory.maxTurns) {
         state.turnEvents = [];
         state.orders = [];
         state.players.filter(player => player.status === "active").forEach(player => {
@@ -183,12 +189,22 @@ const testHeadlessSimulation = () => {
         const nextState = TurnEngine.processTurn(state);
         Object.assign(state, nextState);
         resolveDefeats(state);
-        outcome = evaluateVictory(state, simulationRules);
-        if (outcome.isGameOver) {
+        outcome = VictoryResolver.check(state);
+        if (outcome) {
             break;
         }
     }
-    assert.equal(outcome?.isGameOver, true, "Simulation should reach a terminal state");
+    assert.equal(Boolean(outcome), true, "Simulation should reach a terminal state");
+};
+
+const testResearchProgression = () => {
+    const state = createBaseState();
+    state.stars[0].owner = 1;
+    state.stars[0].pop = 10000;
+    const techState = state.players[0].technology;
+    techState.allocation = { WEAP: 1, PROP: 0, CONST: 0, ELEC: 0, ENER: 0, BIOT: 0, TERR: 0 };
+    resolveResearchForEmpire(techState, 10000 * rules.research.populationModifier, state.rules);
+    assert.ok(techState.fields.WEAP.level > 1, "Weapons tech should advance with sufficient RP");
 };
 
 try {
@@ -196,6 +212,7 @@ try {
     testVictoryConditions();
     testScoreCalculation();
     testHeadlessSimulation();
+    testResearchProgression();
     console.log("All tests passed.");
 } catch (error) {
     console.error("Test failure:", error);

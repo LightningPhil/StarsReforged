@@ -1,16 +1,18 @@
 import { CombatReport } from "../models/combatReport.js";
 
 const sortByInitiative = (a, b) => {
-    if (a.fleet.design.initiative !== b.fleet.design.initiative) {
-        return b.fleet.design.initiative - a.fleet.design.initiative;
+    if (a.initiative !== b.initiative) {
+        return b.initiative - a.initiative;
     }
     return a.fleet.id - b.fleet.id;
 };
 
-const buildFleetState = (fleet) => ({
+const buildFleetState = (fleet, modifiers) => ({
     fleet,
-    shields: fleet.design.shields,
-    hull: fleet.design.hull
+    shields: Math.max(0, Math.floor(fleet.design.shields * modifiers.shieldStrength)),
+    hull: fleet.design.hull,
+    initiative: Math.floor(fleet.design.initiative * modifiers.combatInitiative),
+    attack: Math.max(0, Math.floor(fleet.design.attack * modifiers.shipDamage))
 });
 
 const applyDamage = (fleetState, damage) => {
@@ -57,7 +59,16 @@ const calculateStarDefense = (star) => {
 };
 
 export const CombatResolver = {
-    resolve(systemId, fleets, star) {
+    resolve(systemId, fleets, star, getModifiersForEmpire = () => ({
+        shipDamage: 1,
+        shipSpeed: 1,
+        shipRange: 1,
+        shipCost: 1,
+        combatInitiative: 1,
+        shieldStrength: 1,
+        populationGrowth: 1,
+        habitabilityTolerance: 0
+    })) {
         const participants = fleets.map(fleet => ({ id: fleet.id, owner: fleet.owner, name: fleet.name }));
         const byEmpire = fleets.reduce((acc, fleet) => {
             if (!acc[fleet.owner]) {
@@ -71,7 +82,7 @@ export const CombatResolver = {
             return { fleets, star, report: null };
         }
 
-        let combatants = fleets.map(buildFleetState);
+        let combatants = fleets.map(fleet => buildFleetState(fleet, getModifiersForEmpire(fleet.owner)));
         const losses = {};
         empireIds.forEach(id => {
             losses[id] = [];
@@ -107,7 +118,7 @@ export const CombatResolver = {
                     return;
                 }
                 const target = enemies.sort((a, b) => a.fleet.id - b.fleet.id)[0];
-                const baseDamage = attacker.fleet.design.attack;
+                const baseDamage = attacker.attack;
                 const mitigation = target.fleet.design.defense;
                 const damage = Math.max(0, baseDamage - mitigation);
                 if (damage > 0) {

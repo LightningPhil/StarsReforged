@@ -2,6 +2,12 @@ import { Fleet, Message, Minefield, ResourcePacket, Star } from "../models/entit
 import { dist, intSqrt } from "./utils.js";
 import { CombatResolver } from "./combatResolver.js";
 import { OrderResolver } from "./orderResolver.js";
+import {
+    calculateEmpireResearchPoints,
+    getTechnologyModifiers,
+    getTechnologyStateForEmpire,
+    resolveResearchForEmpire
+} from "./technologyResolver.js";
 
 const cloneStar = (star) => {
     const clone = new Star({ id: star.id, x: star.x, y: star.y, name: star.name, owner: star.owner });
@@ -34,6 +40,19 @@ const cloneFleet = (fleet) => {
 const clonePacket = (packet) => new ResourcePacket({ ...packet });
 const cloneMinefield = (minefield) => new Minefield({ ...minefield });
 const cloneMessage = (message) => new Message({ ...message });
+const cloneTechnology = (technology) => {
+    if (!technology) {
+        return null;
+    }
+    const fields = technology.fields ? Object.fromEntries(Object.entries(technology.fields).map(([id, field]) => ([
+        id,
+        { ...field }
+    ]))) : {};
+    return {
+        fields,
+        allocation: technology.allocation ? { ...technology.allocation } : {}
+    };
+};
 
 const cloneGameState = (state) => ({
     turnCount: state.turnCount,
@@ -57,14 +76,17 @@ const cloneGameState = (state) => ({
     logs: state.logs.slice(),
     turnHash: state.turnHash,
     empireCache: { ...state.empireCache },
-    research: { ...state.research, levels: state.research.levels.slice() },
+    state: state.state,
+    winnerEmpireId: state.winnerEmpireId,
+    researchFocus: state.researchFocus,
+    rules: state.rules,
     rngSeed: state.rngSeed,
     rng: state.rng,
     nextFleetId: state.nextFleetId,
     nextPacketId: state.nextPacketId,
     race: state.race,
     diplomacy: { ...state.diplomacy, status: { ...state.diplomacy.status } },
-    players: state.players ? state.players.map(player => ({ ...player })) : [],
+    players: state.players ? state.players.map(player => ({ ...player, technology: cloneTechnology(player.technology) })) : [],
     orders: state.orders ? state.orders.slice() : [],
     combatReports: state.combatReports ? state.combatReports.slice() : [],
     turnHistory: state.turnHistory ? state.turnHistory.slice() : [],
@@ -87,6 +109,16 @@ const stepToward = (entity, destX, destY, speed) => {
     };
 };
 
+const getFleetSpeed = (state, fleet) => {
+    const modifiers = getTechnologyModifiers(getTechnologyStateForEmpire(state, fleet.owner));
+    return Math.max(15, Math.floor(fleet.design.speed * 12 * modifiers.shipSpeed));
+};
+
+const getFleetScanRange = (state, fleet) => {
+    const modifiers = getTechnologyModifiers(getTechnologyStateForEmpire(state, fleet.owner));
+    return Math.floor(fleet.design.range * modifiers.shipRange);
+};
+
 const resolveMovement = (state) => {
     const nextPositions = new Map();
     state.fleets
@@ -96,7 +128,7 @@ const resolveMovement = (state) => {
             if (!fleet.dest) {
                 return;
             }
-            const speed = fleet.speed;
+            const speed = getFleetSpeed(state, fleet);
             const fuelUse = Math.max(1, Math.floor(speed / 60));
             if (fleet.fuel <= 0) {
                 fleet.dest = null;
@@ -142,7 +174,9 @@ const resolveCombat = (state) => {
         if (!hasHostiles) {
             return;
         }
-        const result = CombatResolver.resolve(systemId, group.fleets, group.star);
+        const result = CombatResolver.resolve(systemId, group.fleets, group.star, (empireId) => (
+            getTechnologyModifiers(getTechnologyStateForEmpire(state, empireId))
+        ));
         state.fleets = state.fleets.filter(fleet => !group.fleets.includes(fleet));
         state.fleets.push(...result.fleets);
         if (result.report) {
@@ -216,24 +250,25 @@ const resolveProduction = (state) => {
 };
 
 const resolvePopulation = (state) => {
-    const growthPermille = 1020 + state.research.levels[5] * 5;
     state.stars
         .filter(star => star.owner)
         .sort((a, b) => a.id - b.id)
         .forEach(star => {
-            const grown = Math.floor((star.pop * growthPermille) / 1000);
+            const modifiers = getTechnologyModifiers(getTechnologyStateForEmpire(state, star.owner));
+            const grown = Math.floor(star.pop * 1.02 * modifiers.populationGrowth);
             star.pop = Math.min(1500000, grown);
         });
 };
 
 const resolveResearch = (state) => {
-    const budget = Math.floor((state.credits * state.research.budget) / 1000);
-    state.research.progress += budget;
-    const cost = 400 + state.research.levels[state.research.field] * 200;
-    if (state.research.progress >= cost) {
-        state.research.levels[state.research.field]++;
-        state.research.progress = 0;
-    }
+    state.players.forEach(player => {
+        const techState = getTechnologyStateForEmpire(state, player.id);
+        if (!techState) {
+            return;
+        }
+        const totalRP = calculateEmpireResearchPoints(state, player.id);
+        resolveResearchForEmpire(techState, totalRP, state.rules);
+    });
 };
 
 const resolveVisibility = (state) => {
@@ -252,7 +287,8 @@ const resolveVisibility = (state) => {
         .sort((a, b) => a.id - b.id)
         .forEach(fleet => {
             if (fleet.owner === 1) {
-                state.activeScanners.push({ x: fleet.x, y: fleet.y, r: fleet.scan, owner: 1 });
+                const range = getFleetScanRange(state, fleet);
+                state.activeScanners.push({ x: fleet.x, y: fleet.y, r: range, owner: 1 });
             }
         });
     state.sectorScans.forEach(scan => state.activeScanners.push(scan));
@@ -290,6 +326,9 @@ const resolveColonization = (state) => {
 
 export const TurnEngine = {
     processTurn(gameState) {
+        if (gameState.state === "ENDED") {
+            return cloneGameState(gameState);
+        }
         const archivedState = {
             turn: gameState.turnCount,
             year: gameState.year,
@@ -307,9 +346,9 @@ export const TurnEngine = {
         resolveMovement(state);
         resolveCombat(state);
         resolveColonization(state);
+        resolveResearch(state);
         resolveProduction(state);
         resolvePopulation(state);
-        resolveResearch(state);
         resolveVisibility(state);
 
         state.orders = [];
