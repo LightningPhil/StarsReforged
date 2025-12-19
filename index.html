@@ -454,7 +454,12 @@
             { id: 'col', name: 'Colony Module', cost: 200, mass: 50, flags: ['colonize'] },
             { id: 'mine', name: 'Mine Layer', cost: 100, mass: 20, flags: ['minelayer'] },
             { id: 'driver', name: 'Mass Driver', cost: 300, mass: 100, flags: ['driver'] }
-        ]
+        ],
+        structures: {
+            mine: { name: 'Mine', cost: 6 },
+            factory: { name: 'Factory', cost: 8 },
+            base: { name: 'Starbase', cost: 600 }
+        }
     };
 
     // --- DATA CLASSES ---
@@ -584,6 +589,7 @@
         aiDesigns: [],
         messages: [],
         battles: [],
+        sectorScans: [],
         research: {
             field: 0,
             levels: [0, 0, 0, 0, 0, 0],
@@ -835,7 +841,11 @@
                 if (star.queue) {
                     star.queue.done += star.def.facts;
                     if (star.queue.done >= star.queue.cost) {
-                        this.buildComplete(star, star.queue.bp, star.queue.owner);
+                        if (star.queue.type === 'ship') {
+                            this.buildComplete(star, star.queue.bp, star.queue.owner);
+                        } else if (star.queue.type === 'structure') {
+                            this.completeStructure(star, star.queue);
+                        }
                     }
                 }
             });
@@ -939,6 +949,20 @@
             star.queue = null;
         },
 
+        completeStructure: function(star, queue) {
+            if (queue.kind === 'mine') {
+                star.def.mines += queue.count;
+            } else if (queue.kind === 'factory') {
+                star.def.facts += queue.count;
+            } else if (queue.kind === 'base') {
+                star.def.base = { name: "Starbase I", hp: 1000 };
+            }
+            if (queue.owner === 1) {
+                this.logMsg(`${DB.structures[queue.kind].name} construction complete at ${star.name}.`, "Industry");
+            }
+            star.queue = null;
+        },
+
         saveDesign: function() {
             const hull = DB.hulls.find(h => h.id === document.getElementById('des-hull').value);
             const engine = DB.engines.find(e => e.id === document.getElementById('des-eng').value);
@@ -971,11 +995,43 @@
             } else {
                 this.aiCredits -= blueprint.cost;
             }
-            star.queue = { bp: blueprint, cost: blueprint.cost, done: 0, owner: ownerId };
+            star.queue = { type: 'ship', bp: blueprint, cost: blueprint.cost, done: 0, owner: ownerId };
             if (ownerId === 1) {
                 UI.updateHeader();
                 UI.updateSide();
                 this.logMsg(`Construction of ${blueprint.name} started at ${star.name}.`, "Industry");
+            }
+        },
+
+        queueStructure: function(star, kind, count = 1, ownerId = 1) {
+            const structure = DB.structures[kind];
+            if (!structure) {
+                return;
+            }
+            if (kind === 'base' && star.def.base) {
+                if (ownerId === 1) {
+                    this.logMsg(`${star.name} already has a starbase.`, "Industry");
+                }
+                return;
+            }
+            const cost = structure.cost * count;
+            const bank = ownerId === 1 ? this.credits : this.aiCredits;
+            if (bank < cost) {
+                if (ownerId === 1) {
+                    this.logMsg(`Insufficient credits to build ${structure.name}.`, "Industry");
+                }
+                return;
+            }
+            if (ownerId === 1) {
+                this.credits -= cost;
+            } else {
+                this.aiCredits -= cost;
+            }
+            star.queue = { type: 'structure', kind, count, cost, done: 0, owner: ownerId };
+            if (ownerId === 1) {
+                UI.updateHeader();
+                UI.updateSide();
+                this.logMsg(`Construction of ${structure.name} queued at ${star.name}.`, "Industry");
             }
         },
 
@@ -1070,7 +1126,9 @@
 
         scanSector: function(star) {
             const range = 200 + this.research.levels[4] * 20;
-            this.activeScanners.push({ x: star.x, y: star.y, r: range, owner: 1 });
+            this.sectorScans.push({ x: star.x, y: star.y, r: range, owner: 1, expires: this.turnCount + 1 });
+            this.updateVisibility();
+            Renderer.cam.dirty = true;
         },
 
         placeMinefield: function(fleet, range) {
@@ -1078,7 +1136,8 @@
                 this.logMsg("This fleet lacks a mine-laying module.", "Command");
                 return;
             }
-            this.minefields.push(new Minefield({ x: fleet.x, y: fleet.y, radius: range, owner: fleet.owner }));
+            const effectiveRange = range || (160 + this.research.levels[4] * 15);
+            this.minefields.push(new Minefield({ x: fleet.x, y: fleet.y, radius: effectiveRange, owner: fleet.owner }));
             this.logMsg(`${fleet.name} deployed a minefield.`, "Command");
         },
 
@@ -1136,6 +1195,7 @@
 
         updateVisibility: function() {
             this.activeScanners = [];
+            this.sectorScans = this.sectorScans.filter(scan => scan.expires >= this.turnCount);
             this.stars.forEach(star => {
                 if (star.owner === 1) {
                     this.activeScanners.push({ x: star.x, y: star.y, r: 260, owner: 1 });
@@ -1146,6 +1206,7 @@
                     this.activeScanners.push({ x: fleet.x, y: fleet.y, r: fleet.scan, owner: 1 });
                 }
             });
+            this.sectorScans.forEach(scan => this.activeScanners.push(scan));
 
             this.stars.forEach(star => {
                 const visible = this.activeScanners.some(scan => dist(scan, star) <= scan.r);
@@ -1322,22 +1383,54 @@
         },
 
         drawBackground: function(ctx) {
+            const size = 120;
+            const height = Math.sqrt(3) * size;
+            const width = size * 2;
+            const offsetX = (this.time * 60) % width;
+            const offsetY = (this.time * 45) % height;
+
+            ctx.save();
             ctx.strokeStyle = '#10151f';
             ctx.lineWidth = 1;
-            const grid = 160;
-            const offset = (this.time * 40) % grid;
-            for (let i = -grid; i <= 3400; i += grid) {
-                ctx.beginPath();
-                ctx.moveTo(i + offset, 0);
-                ctx.lineTo(i + offset - 80, 3400);
-                ctx.stroke();
+            ctx.globalAlpha = 0.8;
+            for (let y = -height; y <= 3600; y += height) {
+                for (let x = -width; x <= 3600; x += width * 0.75) {
+                    const px = x + offsetX + ((y / height) % 2) * (width / 2);
+                    const py = y + offsetY;
+                    this.drawHex(ctx, px, py, size);
+                }
             }
-            for (let y = 0; y <= 3400; y += grid) {
-                ctx.beginPath();
-                ctx.moveTo(0, y + offset);
-                ctx.lineTo(3400, y + offset);
-                ctx.stroke();
+            ctx.restore();
+
+            ctx.save();
+            ctx.strokeStyle = '#0a1a24';
+            ctx.lineWidth = 1;
+            ctx.globalAlpha = 0.6;
+            const parallax = (this.time * 25) % width;
+            for (let y = -height; y <= 3600; y += height) {
+                for (let x = -width; x <= 3600; x += width * 0.75) {
+                    const px = x - parallax + ((y / height) % 2) * (width / 2);
+                    const py = y + offsetY * 0.6;
+                    this.drawHex(ctx, px, py, size * 0.6);
+                }
             }
+            ctx.restore();
+        },
+
+        drawHex: function(ctx, x, y, size) {
+            ctx.beginPath();
+            for (let i = 0; i < 6; i++) {
+                const angle = (Math.PI / 3) * i;
+                const px = x + size * Math.cos(angle);
+                const py = y + size * Math.sin(angle);
+                if (i === 0) {
+                    ctx.moveTo(px, py);
+                } else {
+                    ctx.lineTo(px, py);
+                }
+            }
+            ctx.closePath();
+            ctx.stroke();
         },
 
         drawMinefields: function(ctx) {
@@ -1726,22 +1819,41 @@
                 h += `<div class="stat-row"><span>Germ</span> <span class="val">${info.mins.g}%</span></div><div class="bar-wrap"><div class="bar-fill res-g" style="width:${info.mins.g}%"></div></div>`;
 
                 if (star.owner === 1 && star.visible) {
-                    h += `<div class="panel-block" style="margin-top:15px;"><h3>Production</h3>`;
-                    h += `<div class="stat-row"><span>Mines</span> <span class="val">${star.def.mines}</span></div>`;
-                    h += `<div class="stat-row"><span>Factories</span> <span class="val">${star.def.facts}</span></div>`;
-                    h += `<div class="stat-row"><span>Starbase</span> <span class="val">${star.def.base ? star.def.base.name : 'None'}</span></div>`;
+                h += `<div class="panel-block" style="margin-top:15px;"><h3>Production</h3>`;
+                h += `<div class="stat-row"><span>Mines</span> <span class="val">${star.def.mines}</span></div>`;
+                h += `<div class="stat-row"><span>Factories</span> <span class="val">${star.def.facts}</span></div>`;
+                h += `<div class="stat-row"><span>Starbase</span> <span class="val">${star.def.base ? star.def.base.name : 'None'}</span></div>`;
 
-                    if (star.queue) {
-                        h += `<div style="color:var(--c-warn); font-size:12px; margin-top:5px;">Building: ${star.queue.bp.name}<br>${Math.floor(star.queue.done)} / ${star.queue.cost}</div>`;
+                if (star.queue) {
+                        const label = star.queue.type === 'ship'
+                            ? star.queue.bp.name
+                            : `${DB.structures[star.queue.kind].name} x${star.queue.count}`;
+                        h += `<div style="color:var(--c-warn); font-size:12px; margin-top:5px;">Building: ${label}<br>${Math.floor(star.queue.done)} / ${star.queue.cost}</div>`;
                     } else {
                         h += `<div style="font-size:12px; margin-top:6px;">Queue a blueprint from the Design screen.</div>`;
                     }
-                    h += `</div>`;
+                h += `</div>`;
 
-                    const targets = Game.stars.filter(s => s.owner === 1 && s.id !== star.id);
-                    const targetOptions = targets.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
-                    h += `<div class="panel-block"><h3>Mass Driver</h3>`;
-                    h += `<div class="stat-row"><span>Target</span> <select id="driver-target"><option value="">Select</option>${targetOptions}</select></div>`;
+                h += `<div class="panel-block"><h3>Planetary Build</h3>`;
+                if (!star.queue) {
+                    h += `<button class="action" onclick="Game.queueStructure(Game.stars[${star.id}], 'mine', 10)">Add 10 Mines (${DB.structures.mine.cost * 10}cr)</button>`;
+                    h += `<button class="action" onclick="Game.queueStructure(Game.stars[${star.id}], 'factory', 10)">Add 10 Factories (${DB.structures.factory.cost * 10}cr)</button>`;
+                    if (!star.def.base) {
+                        h += `<button class="action" onclick="Game.queueStructure(Game.stars[${star.id}], 'base', 1)">Construct Starbase (${DB.structures.base.cost}cr)</button>`;
+                    }
+                } else {
+                    h += `<div style="font-size:12px; color:#667;">Construction queue active.</div>`;
+                }
+                h += `</div>`;
+
+                h += `<div class="panel-block"><h3>Sector Scan</h3>`;
+                h += `<button class="action" onclick="Game.scanSector(Game.stars[${star.id}])">RUN SECTOR SCAN</button>`;
+                h += `</div>`;
+
+                const targets = Game.stars.filter(s => s.owner === 1 && s.id !== star.id);
+                const targetOptions = targets.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+                h += `<div class="panel-block"><h3>Mass Driver</h3>`;
+                h += `<div class="stat-row"><span>Target</span> <select id="driver-target"><option value="">Select</option>${targetOptions}</select></div>`;
                     h += `<div class="stat-row"><span>Amount</span> <span class="val"><input id="driver-amount" type="range" min="0" max="500" value="0" style="width:140px;"></span></div>`;
                     h += `<button class="action" onclick="Game.launchPacket(${star.id})">LAUNCH PACKET</button>`;
                     h += `</div>`;
@@ -1755,7 +1867,7 @@
                 h += `<div class="stat-row"><span>Range</span> <span class="val">${fleet.design.range}</span></div>`;
                 h += `<div class="stat-row"><span>Mission</span> <span class="val">${fleet.dest ? 'Transit' : 'Orbit'}</span></div>`;
                 if (fleet.design.flags.includes('minelayer')) {
-                    h += `<button class="action" onclick="Game.placeMinefield(Game.fleets[${Game.selection.id}], 180)">DEPLOY MINEFIELD</button>`;
+                    h += `<button class="action" onclick="Game.placeMinefield(Game.fleets[${Game.selection.id}])">DEPLOY MINEFIELD</button>`;
                 }
                 h += `<button class="action" style="border-color:var(--c-alert); color:var(--c-alert)">SCRAP FLEET</button>`;
             }
