@@ -40,6 +40,11 @@ class ShipDesign {
         this.speed = Math.max(1, Math.floor(engine.power - hull.mass / 120));
         this.bv = weapon.dmg * 2 + (shield.dmg || 0);
         this.flags = special.flags || [];
+        this.attack = weapon.dmg;
+        this.defense = shield.dmg || 0;
+        this.shields = Math.max(0, Math.floor((shield.dmg || 0) * 2));
+        this.hull = Math.max(50, hull.mass * 2);
+        this.initiative = engine.power;
     }
 }
 
