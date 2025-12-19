@@ -1,4 +1,10 @@
 import { ORDER_TYPES } from "../models/orders.js";
+import {
+    adjustAllocationForField,
+    getTechnologyModifiers,
+    getTechnologyStateForEmpire,
+    normalizeAllocation
+} from "./technologyResolver.js";
 
 const getFleetById = (state, fleetId) => state.fleets.find(fleet => fleet.id === fleetId);
 const getStarById = (state, starId) => state.stars.find(star => star.id === starId);
@@ -63,27 +69,36 @@ const resolveBuildShips = (state, order) => {
         logOrderError(state, `Star ${star.id} already has a build queue.`);
         return;
     }
+    const techState = getTechnologyStateForEmpire(state, order.issuerId);
+    const modifiers = getTechnologyModifiers(techState);
+    const adjustedCost = Math.ceil(blueprint.cost * modifiers.shipCost);
     const economy = state.economy?.[order.issuerId];
-    if (!economy || economy.credits < blueprint.cost) {
+    if (!economy || economy.credits < adjustedCost) {
         logOrderError(state, `Insufficient credits to build ${blueprint.name}.`);
         return;
     }
-    economy.credits -= blueprint.cost;
-    star.queue = { type: "ship", bp: blueprint, cost: blueprint.cost, done: 0, owner: order.issuerId };
+    economy.credits -= adjustedCost;
+    star.queue = { type: "ship", bp: blueprint, cost: adjustedCost, done: 0, owner: order.issuerId };
 };
 
 const resolveResearch = (state, order) => {
-    if (order.issuerId !== 1) {
+    const techState = getTechnologyStateForEmpire(state, order.issuerId);
+    if (!techState) {
         return;
     }
-    const field = order.payload?.field;
-    const budget = order.payload?.budget;
-    if (!Number.isFinite(field) || !Number.isFinite(budget)) {
-        logOrderError(state, "Invalid RESEARCH order payload.");
+    const fields = state.rules?.technologyFields || [];
+    const allocation = order.payload?.allocation;
+    const fieldId = order.payload?.fieldId;
+    const share = order.payload?.share;
+    if (allocation && typeof allocation === "object") {
+        techState.allocation = normalizeAllocation(allocation, fields);
         return;
     }
-    state.research.field = field;
-    state.research.budget = budget;
+    if (fieldId && Number.isFinite(share)) {
+        techState.allocation = adjustAllocationForField(techState.allocation, fields, fieldId, share);
+        return;
+    }
+    logOrderError(state, "Invalid RESEARCH order payload.");
 };
 
 export const OrderResolver = {

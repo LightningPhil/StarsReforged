@@ -1,0 +1,11 @@
+{
+  "fields": [
+    { "id": "WEAP", "name": "Weapons", "description": "Increases combat damage." },
+    { "id": "PROP", "name": "Propulsion", "description": "Increases ship speed and range." },
+    { "id": "CONST", "name": "Construction", "description": "Reduces ship build cost." },
+    { "id": "ELEC", "name": "Electronics", "description": "Improves targeting and initiative." },
+    { "id": "ENER", "name": "Energy", "description": "Improves shields and power." },
+    { "id": "BIOT", "name": "Biotechnology", "description": "Improves population growth." },
+    { "id": "TERR", "name": "Terraforming", "description": "Improves planet habitability." }
+  ]
+}

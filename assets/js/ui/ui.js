@@ -21,8 +21,12 @@ export const UI = {
         this.updateResearch();
 
         document.getElementById('rd-slider').addEventListener('input', e => {
-            Game.research.budget = parseInt(e.target.value, 10);
-            document.getElementById('rd-budget').innerText = Game.research.budget;
+            const value = parseInt(e.target.value, 10);
+            const share = value / 100;
+            if (Game.researchFocus) {
+                Game.setResearchAllocationForField(Game.researchFocus, share, 1);
+            }
+            document.getElementById('rd-budget').innerText = value;
         });
 
         ['des-hull', 'des-eng', 'des-wep', 'des-shi', 'des-spec'].forEach(id => {
@@ -100,7 +104,9 @@ export const UI = {
         document.getElementById('g-year').innerText = Game.year;
         document.getElementById('g-cred').innerText = Game.credits;
         document.getElementById('g-metal').innerText = `${(Game.minerals / 1000).toFixed(1)}k`;
-        document.getElementById('g-rd').innerText = `${Game.research.progress}`;
+        const focus = Game.researchFocus;
+        const fieldState = focus ? Game.getResearchFieldState(focus, 1) : null;
+        document.getElementById('g-rd').innerText = fieldState ? Math.floor(fieldState.storedRP) : 0;
     },
 
     updateEmpire: function() {
@@ -200,18 +206,18 @@ export const UI = {
     renderTech: function() {
         const g = document.getElementById('tech-grid');
         g.innerHTML = '';
-        DB.techs.forEach((t, i) => {
+        Game.getTechnologyFields().forEach(field => {
             const d = document.createElement('div');
             d.className = 'card';
             d.innerHTML = `
-                <h3>${t.name}</h3>
-                <div style="font-size:12px; margin-bottom:8px;">${t.desc}</div>
-                <div class="val">Level: <span id="tech-lvl-${i}">0</span></div>
-                <div class="bar-wrap"><div class="bar-fill" style="width:0%" id="tech-bar-${i}"></div></div>
-                <button class="action" data-tech="${i}">Focus Research</button>
+                <h3>${field.name}</h3>
+                <div style="font-size:12px; margin-bottom:8px;">${field.description}</div>
+                <div class="val">Level: <span id="tech-lvl-${field.id}">1</span></div>
+                <div class="bar-wrap"><div class="bar-fill" style="width:0%" id="tech-bar-${field.id}"></div></div>
+                <button class="action" data-tech="${field.id}">Focus Research</button>
             `;
             d.querySelector('button').addEventListener('click', e => {
-                Game.research.field = parseInt(e.target.dataset.tech, 10);
+                Game.researchFocus = e.target.dataset.tech;
                 this.updateResearch();
             });
             g.appendChild(d);
@@ -219,15 +225,26 @@ export const UI = {
     },
 
     updateResearch: function() {
-        document.getElementById('tech-focus').innerText = DB.techs[Game.research.field].name;
-        document.getElementById('rd-budget').innerText = Game.research.budget;
+        const fields = Game.getTechnologyFields();
+        if (!Game.researchFocus && fields.length) {
+            Game.researchFocus = fields[0].id;
+        }
+        const focusField = fields.find(field => field.id === Game.researchFocus);
+        document.getElementById('tech-focus').innerText = focusField?.name || "Unknown";
 
-        DB.techs.forEach((t, i) => {
-            const lvl = Game.research.levels[i];
-            const cost = Game.researchCost(i);
-            const fill = i === Game.research.field ? Math.min(100, Math.floor((Game.research.progress / cost) * 100)) : 0;
-            document.getElementById(`tech-lvl-${i}`).innerText = lvl;
-            document.getElementById(`tech-bar-${i}`).style.width = `${fill}%`;
+        const allocation = Game.getResearchAllocation(1);
+        const focusAllocation = allocation?.[Game.researchFocus] ?? 0;
+        document.getElementById('rd-budget').innerText = Math.round(focusAllocation * 100);
+        document.getElementById('rd-slider').value = Math.round(focusAllocation * 100);
+
+        fields.forEach(field => {
+            const fieldState = Game.getResearchFieldState(field.id, 1);
+            if (!fieldState) {
+                return;
+            }
+            const fill = Math.min(100, Math.floor((fieldState.storedRP / fieldState.rpToNextLevel) * 100));
+            document.getElementById(`tech-lvl-${field.id}`).innerText = fieldState.level;
+            document.getElementById(`tech-bar-${field.id}`).style.width = `${fill}%`;
         });
     },
 
