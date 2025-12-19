@@ -1,14 +1,13 @@
-import { r } from "../core/utils.js";
-
 class Star {
-    constructor({ id, x, y, name, owner = null }) {
+    constructor({ id, x, y, name, owner = null, rng = null }) {
         this.id = id;
         this.x = x;
         this.y = y;
         this.name = name;
         this.owner = owner;
         this.pop = 0;
-        this.mins = { i: r(100), b: r(100), g: r(100) };
+        const roll = () => (rng ? rng.nextInt(100) : 0);
+        this.mins = { i: roll(), b: roll(), g: roll() };
         this.def = { mines: 0, facts: 0, base: null };
         this.queue = null;
         this.visible = false;
