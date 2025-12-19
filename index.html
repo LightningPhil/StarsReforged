@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>STARS // OMEGA_FRAMEWORK</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
+
+        :root {
+            --bg-deep: #050508;
+            --bg-panel: rgba(10, 15, 20, 0.95);
+            --c-cyan: #00f0ff;
+            --c-cyan-dim: rgba(0, 240, 255, 0.15);
+            --c-alert: #ff0055;
+            --c-warn: #ffcc00;
+            --c-good: #00ff66;
+            --c-text: #aaccff;
+            --c-border: #1a2a3a;
+            --font: 'Share Tech Mono', monospace;
+        }
+
+        * { box-sizing: border-box; user-select: none; scrollbar-width: thin; scrollbar-color: var(--c-cyan) var(--bg-deep); }
+        
+        body {
+            margin: 0; height: 100vh; background: #000; color: var(--c-text); font-family: var(--font);
+            display: grid;
+            grid-template-columns: 60px 1fr 300px;
+            grid-template-rows: 40px 1fr 40px;
+            grid-template-areas: 
+                "header header header"
+                "nav    view   context"
+                "footer footer footer";
+            overflow: hidden;
+        }
+
+        /* --- FX --- */
+        .crt::before {
+            content: " "; position: absolute; inset: 0; pointer-events: none; z-index: 999;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), 
+                        linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+            background-size: 100% 2px, 3px 100%;
+        }
+
+        /* --- LAYOUT --- */
+        header { grid-area: header; background: var(--bg-panel); border-bottom: 1px solid var(--c-cyan-dim); display:flex; align-items:center; padding: 0 20px; justify-content:space-between; z-index:10;}
+        nav { grid-area: nav; background: var(--bg-deep); border-right: 1px solid var(--c-cyan-dim); display:flex; flex-direction:column; align-items:center; padding-top:10px; z-index:10;}
+        aside { grid-area: context; background: var(--bg-panel); border-left: 1px solid var(--c-cyan-dim); padding:10px; overflow-y:auto; z-index:10;}
+        footer { grid-area: footer; background: var(--bg-panel); border-top: 1px solid var(--c-cyan-dim); display:flex; align-items:center; padding: 0 20px; z-index:10;}
+        
+        #main-view { grid-area: view; position: relative; overflow: hidden; background: #000; }
+        
+        /* --- COMPONENTS --- */
+        .icon-btn {
+            width: 40px; height: 40px; margin-bottom: 10px; border: 1px solid var(--c-border); 
+            color: var(--c-cyan); background: transparent; cursor: pointer; display:flex; justify-content:center; align-items:center; font-size:18px; transition:0.2s;
+        }
+        .icon-btn:hover, .icon-btn.active { background: var(--c-cyan-dim); border-color: var(--c-cyan); box-shadow: 0 0 10px var(--c-cyan-dim); }
+        
+        .panel-block { margin-bottom: 15px; border-bottom: 1px solid var(--c-border); padding-bottom: 10px; }
+        h3 { margin: 0 0 5px 0; font-size: 12px; color: var(--c-cyan); text-transform: uppercase; letter-spacing: 1px; }
+        
+        .stat-row { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 3px; }
+        .val { color: #fff; }
+        .val.alert { color: var(--c-alert); }
+
+        /* Progress Bars */
+        .bar-wrap { width: 100%; height: 4px; background: #222; margin-bottom: 5px; }
+        .bar-fill { height: 100%; background: var(--c-cyan); width: 0%; }
+        .res-i { background: #66f; } .res-b { background: #4f4; } .res-g { background: var(--c-warn); }
+
+        /* Full Screen Overlays (Research, Design) */
+        .screen-overlay {
+            position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.9); padding: 40px; display: none; overflow-y: auto;
+        }
+        .screen-overlay.active { display: block; }
+        
+        .grid-layout { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 20px; }
+        .card { border: 1px solid var(--c-border); padding: 15px; background: rgba(0,20,30,0.5); }
+        .card:hover { border-color: var(--c-cyan); }
+
+        /* Inputs */
+        button.action { width: 100%; padding: 8px; background: var(--c-cyan-dim); border: 1px solid var(--c-cyan); color: var(--c-cyan); cursor: pointer; font-family: inherit; margin-top:5px; }
+        button.action:hover { background: var(--c-cyan); color: #000; }
+
+        .res-ticker { font-size: 14px; margin-right: 15px; }
+        .res-ticker span { color: var(--c-warn); }
+    </style>
+</head>
+<body class="crt">
+
+    <header>
+        <div style="font-size: 20px; color: var(--c-cyan); letter-spacing: 2px;">STARS <span style="font-size:10px; opacity:0.7">OMEGA</span></div>
+        <div style="display:flex;">
+            <div class="res-ticker">Y: <span id="g-year" style="color:#fff">2400</span></div>
+            <div class="res-ticker">CR: <span id="g-cred">500</span></div>
+            <div class="res-ticker">MET: <span id="g-metal">20k</span></div>
+        </div>
+    </header>
+
+    <nav>
+        <button class="icon-btn active" onclick="UI.setScreen('map')" title="Galaxy Map">M</button>
+        <button class="icon-btn" onclick="UI.setScreen('empire')" title="Empire Overview">E</button>
+        <button class="icon-btn" onclick="UI.setScreen('research')" title="Research Lab">R</button>
+        <button class="icon-btn" onclick="UI.setScreen('design')" title="Ship Design">D</button>
+        <button class="icon-btn" onclick="UI.setScreen('fleets')" title="Fleet Manager">F</button>
+        <button class="icon-btn" onclick="UI.setScreen('comms')" title="Diplomacy/Logs">C</button>
+    </nav>
+
+    <div id="main-view">
+        <canvas id="galaxy-canvas"></canvas>
+        
+        <!-- EMPIRE SCREEN -->
+        <div id="screen-empire" class="screen-overlay">
+            <h1 style="color:var(--c-cyan)">IMPERIAL DASHBOARD</h1>
+            <div class="grid-layout">
+                <div class="card">
+                    <h3>Race Traits</h3>
+                    <div class="stat-row"><span>Type:</span> <span class="val">Cyber-Aquatic</span></div>
+                    <div class="stat-row"><span>Grav Tol:</span> <span class="val">0.5g - 4.0g</span></div>
+                    <div class="stat-row"><span>Temp Tol:</span> <span class="val">-50° - 120°</span></div>
+                    <div class="stat-row"><span>Growth:</span> <span class="val" style="color:var(--c-good)">+18%</span></div>
+                    <div class="stat-row"><span>Mining:</span> <span class="val">Standard</span></div>
+                </div>
+                <div class="card">
+                    <h3>Economy</h3>
+                    <div class="stat-row"><span>Total Pop:</span> <span class="val" id="emp-pop">0</span></div>
+                    <div class="stat-row"><span>Tax Income:</span> <span class="val" id="emp-tax">0</span></div>
+                    <div class="stat-row"><span>Maint. Cost:</span> <span class="val alert" id="emp-maint">0</span></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- RESEARCH SCREEN -->
+        <div id="screen-research" class="screen-overlay">
+            <h1 style="color:var(--c-cyan)">R&D LABS</h1>
+            <div style="margin-bottom:20px;">Current Budget: <span class="val">15%</span> of GDP</div>
+            <div class="grid-layout" id="tech-grid"></div>
+        </div>
+
+        <!-- COMMS SCREEN -->
+        <div id="screen-comms" class="screen-overlay">
+            <h1 style="color:var(--c-cyan)">COMMS & LOGS</h1>
+            <div class="grid-layout" style="grid-template-columns: 1fr 2fr;">
+                <div class="card">
+                    <h3>Inbox</h3>
+                    <div id="msg-list" style="font-size:12px; height: 300px; overflow-y:auto;"></div>
+                </div>
+                <div class="card">
+                    <h3>Message Content</h3>
+                    <div id="msg-body" style="font-size:14px; color:#fff;">Select a message...</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- DESIGN SCREEN -->
+        <div id="screen-design" class="screen-overlay">
+            <h1 style="color:var(--c-cyan)">NAVAL ARCHITECT</h1>
+            <div class="grid-layout">
+                <div class="card">
+                    <h3>Hull & Components</h3>
+                    <div class="stat-row">Hull: <select id="des-hull" style="background:#000; color:#fff"></select></div>
+                    <div class="stat-row">Engine: <select id="des-eng" style="background:#000; color:#fff"></select></div>
+                    <div class="stat-row">Weapon: <select id="des-wep" style="background:#000; color:#fff"></select></div>
+                    <div class="stat-row">Shield: <select id="des-shi" style="background:#000; color:#fff"></select></div>
+                    <div class="stat-row">Special: <select id="des-spec" style="background:#000; color:#fff"></select></div>
+                    <input type="text" id="des-name" value="New Ship Class" style="width:100%; margin-top:10px; background:#111; color:#fff; border:1px solid #444;">
+                    <button class="action" onclick="Game.saveDesign()">SAVE BLUEPRINT</button>
+                </div>
+                <div class="card">
+                    <h3>Simulated Specs</h3>
+                    <div class="stat-row"><span>Cost:</span> <span class="val" id="sim-cost">0</span></div>
+                    <div class="stat-row"><span>Mass:</span> <span class="val" id="sim-mass">0</span>kt</div>
+                    <div class="stat-row"><span>Fuel Cap:</span> <span class="val" id="sim-fuel">0</span>mg</div>
+                    <div class="stat-row"><span>Battle Value:</span> <span class="val" id="sim-bv">0</span></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- CONTEXT SIDEBAR -->
+    <aside id="ctx-panel">
+        <div id="ctx-none" style="text-align:center; margin-top:50px; color:#555;">NO SIGNAL<br>L-Click Select<br>R-Click Move</div>
+        <div id="ctx-content" style="display:none"></div>
+    </aside>
+
+    <footer>
+        <button id="turn-btn" class="action" style="width:auto; padding:0 30px; height:30px;" onclick="Game.turn()">EXECUTE TURN</button>
+        <div id="footer-log" style="margin-left:20px; font-size:12px; color:#666;">READY.</div>
+    </footer>
+
+<script>
+    /** STARS // OMEGA FRAMEWORK **/
+    
+    // --- DATABASE ---
+    const DB = {
+        techs: ['Energy', 'Weapons', 'Propulsion', 'Construction', 'Electronics', 'Biotech'],
+        hulls: [
+            { id: 'scout', name: 'Scout', cost: 20, mass: 10, slots: 2 },
+            { id: 'frig', name: 'Frigate', cost: 120, mass: 60, slots: 4 },
+            { id: 'dest', name: 'Destroyer', cost: 250, mass: 120, slots: 6 },
+            { id: 'cru', name: 'Cruiser', cost: 600, mass: 300, slots: 8 },
+            { id: 'bb', name: 'Battleship', cost: 1500, mass: 900, slots: 12 }
+        ],
+        engines: [
+            { id: 'std', name: 'Std. Drive', cost: 10, power: 5, fuel: 1 },
+            { id: 'hydro', name: 'Hydro-Ram', cost: 50, power: 8, fuel: 2 },
+            { id: 'fusion', name: 'Fusion Pulse', cost: 150, power: 12, fuel: 0.8 }
+        ],
+        weapons: [
+            { id: 'none', name: 'None', cost: 0, dmg: 0 },
+            { id: 'laser', name: 'X-Ray Laser', cost: 20, dmg: 15 },
+            { id: 'torp', name: 'Alpha Torp', cost: 40, dmg: 40 },
+            { id: 'plas', name: 'Plasma Bolt', cost: 120, dmg: 100 }
+        ],
+        specials: [
+            { id: 'none', name: 'None', cost: 0 },
+            { id: 'col', name: 'Colony Module', cost: 200, mass: 50 },
+            { id: 'mine', name: 'Mine Layer', cost: 100, mass: 20 },
+            { id: 'driver', name: 'Mass Driver', cost: 300, mass: 100 }
+        ]
+    };
+
+    // --- GAME STATE ---
+    const Game = {
+        turnCount: 0,
+        year: 2400,
+        credits: 1000,
+        minerals: 5000,
+        stars: [],
+        fleets: [],
+        packets: [], // Minerals in flight
+        minefields: [], 
+        designs: [],
+        messages: [],
+        research: { field: 0, levels: [0,0,0,0,0,0], progress: 0 },
+        
+        selection: null,
+
+        init: function() {
+            // Default Design
+            this.designs.push({ name: "Probe v1", hull: DB.hulls[0], eng: DB.engines[0], wep: DB.weapons[0], spec: DB.specials[0], cost: 30, fuel: 100 });
+            this.designs.push({ name: "Colony Ark", hull: DB.hulls[1], eng: DB.engines[0], wep: DB.weapons[0], spec: DB.specials[1], cost: 280, fuel: 300 });
+
+            // Generate Galaxy
+            for(let i=0; i<80; i++) {
+                this.stars.push({
+                    id: i,
+                    x: Math.random()*3000, y: Math.random()*3000,
+                    name: `S-${100+i}`,
+                    owner: null,
+                    pop: 0,
+                    mins: {i: r(100), b: r(100), g: r(100)},
+                    def: { mines: 0, facts: 0, base: null },
+                    queue: null
+                });
+            }
+
+            // Setup Home
+            const h = this.stars[0];
+            h.x = 1500; h.y = 1500;
+            h.owner = 1; // Player
+            h.name = "HOMEWORLD";
+            h.pop = 50000;
+            h.def.mines = 100;
+            h.def.facts = 100;
+            h.def.base = { name: "Starbase I", hp: 1000 };
+
+            // Setup Fleet
+            this.fleets.push({
+                id: 1, owner: 1, x: h.x, y: h.y, name: "Scout 1", 
+                design: this.designs[0], fuel: 100, dest: null
+            });
+            this.fleets.push({
+                id: 2, owner: 1, x: h.x, y: h.y, name: "Colony 1", 
+                design: this.designs[1], fuel: 300, dest: null
+            });
+
+            // Initial Messages
+            this.logMsg("Welcome, Emperor. The sector is uncharted.", "System");
+
+            Renderer.init();
+            UI.init();
+        },
+
+        turn: function() {
+            this.year++;
+            this.turnCount++;
+
+            // 1. Move Packets
+            // (Placeholder logic)
+
+            // 2. Move Fleets
+            this.fleets.forEach(f => {
+                if(f.dest) {
+                    const dx = f.dest.x - f.x, dy = f.dest.y - f.y;
+                    const dist = Math.sqrt(dx*dx + dy*dy);
+                    const speed = 60; // Simplified
+                    if(dist <= speed) {
+                        f.x = f.dest.x; f.y = f.dest.y; f.dest = null;
+                        this.arrived(f);
+                    } else {
+                        const angle = Math.atan2(dy, dx);
+                        f.x += Math.cos(angle)*speed; f.y += Math.sin(angle)*speed;
+                        f.fuel -= 1; // Burn fuel
+                    }
+                }
+            });
+
+            // 3. Planet Production
+            let taxTotal = 0;
+            this.stars.filter(s => s.owner === 1).forEach(s => {
+                // Growth
+                s.pop = Math.min(1000000, Math.floor(s.pop * 1.05));
+                // Income
+                taxTotal += Math.floor(s.pop / 1000);
+                
+                // Build Queue
+                if(s.queue) {
+                    s.queue.done += s.def.facts; // Factory output
+                    if(s.queue.done >= s.queue.cost) {
+                        this.buildComplete(s);
+                    }
+                }
+            });
+            this.credits += taxTotal;
+
+            // 4. Research
+            const budget = 100; // Placeholder
+            this.research.progress += budget;
+            if(this.research.progress > 500) {
+                this.research.levels[this.research.field]++;
+                this.research.progress = 0;
+                this.logMsg(`${DB.techs[this.research.field]} Tech Advanced to Level ${this.research.levels[this.research.field]}`, "Research");
+            }
+
+            // 5. Random Events / AI (Mock)
+            if(Math.random() > 0.9) {
+                this.logMsg("Sub-space anomaly detected in Sector 7.", "Science");
+            }
+
+            Renderer.cam.dirty = true; // force redraw
+            UI.updateHeader();
+            UI.updateSide();
+        },
+
+        arrived: function(f) {
+            const s = this.stars.find(st => dist(st, f) < 10);
+            if(s) {
+                if(!s.owner && f.design.spec.id === 'col') {
+                    s.owner = 1;
+                    s.pop = 2000; // Colonists unloaded
+                    this.logMsg(`${s.name} Colonized!`, "Expansion");
+                    // Destroy fleet (module used) - simplistic
+                    this.fleets = this.fleets.filter(x => x.id !== f.id);
+                } else {
+                    this.logMsg(`${f.name} arrived at ${s.name}`, "Fleet");
+                }
+            }
+        },
+
+        buildComplete: function(s) {
+            const bp = s.queue.bp;
+            this.fleets.push({
+                id: Date.now(), owner: 1, x: s.x, y: s.y, name: `${bp.name} ${r(99)}`,
+                design: bp, fuel: bp.fuel, dest: null
+            });
+            this.logMsg(`Production of ${bp.name} complete at ${s.name}`, "Industry");
+            s.queue = null;
+        },
+
+        saveDesign: function() {
+            // Placeholder save logic
+            this.logMsg("New Ship Design saved to database.", "Engineering");
+        },
+
+        logMsg: function(txt, sender) {
+            this.messages.unshift({turn: this.year, txt, sender});
+            UI.updateComms();
+        }
+    };
+
+    // --- RENDERER (CANVAS) ---
+    const Renderer = {
+        cvs: document.getElementById('galaxy-canvas'),
+        ctx: document.getElementById('galaxy-canvas').getContext('2d'),
+        cam: { x: 1500, y: 1500, zoom: 1, dirty: true },
+
+        init: function() {
+            window.addEventListener('resize', this.resize.bind(this));
+            this.resize();
+            
+            // Input Handlers
+            let drag = false, lx=0, ly=0;
+            this.cvs.addEventListener('mousedown', e => {
+                if(e.button===2) { drag=true; lx=e.clientX; ly=e.clientY; } // Pan
+                else this.click(e); // Select
+            });
+            window.addEventListener('mouseup', () => drag=false);
+            window.addEventListener('mousemove', e => {
+                if(drag) {
+                    this.cam.x -= (e.clientX - lx);
+                    this.cam.y -= (e.clientY - ly);
+                    lx=e.clientX; ly=e.clientY;
+                }
+                // Mouse hover logic could go here
+            });
+            this.cvs.addEventListener('contextmenu', e => {
+                e.preventDefault();
+                if(Game.selection && Game.selection.type === 'fleet') {
+                    const w = this.screenToWorld(e.clientX, e.clientY);
+                    Game.fleets[Game.selection.id].dest = {x: w.x, y: w.y};
+                    Game.logMsg("Fleet course plotted.", "Command");
+                }
+            });
+            this.cvs.addEventListener('wheel', e => {
+                this.cam.zoom *= e.deltaY > 0 ? 0.9 : 1.1;
+            });
+
+            this.loop();
+        },
+        
+        resize: function() {
+            this.cvs.width = this.cvs.parentElement.offsetWidth;
+            this.cvs.height = this.cvs.parentElement.offsetHeight;
+        },
+
+        screenToWorld: function(sx, sy) {
+            const r = this.cvs.getBoundingClientRect();
+            return {
+                x: (sx - r.left - this.cvs.width/2) / this.cam.zoom + this.cam.x,
+                y: (sy - r.top - this.cvs.height/2) / this.cam.zoom + this.cam.y
+            };
+        },
+
+        click: function(e) {
+            const w = this.screenToWorld(e.clientX, e.clientY);
+            let hit = null;
+            // Check Fleets
+            Game.fleets.forEach((f,i) => { if(dist(f, w) < 20/this.cam.zoom) hit = {type:'fleet', id:i}; });
+            // Check Stars
+            if(!hit) Game.stars.forEach(s => { if(dist(s, w) < 20/this.cam.zoom) hit = {type:'star', id:s.id}; });
+            
+            Game.selection = hit;
+            UI.updateSide();
+        },
+
+        loop: function() {
+            requestAnimationFrame(this.loop.bind(this));
+            this.draw();
+        },
+
+        draw: function() {
+            const ctx = this.ctx; const cvs = this.cvs;
+            const w = cvs.width; const h = cvs.height;
+            
+            ctx.fillStyle = '#000'; ctx.fillRect(0,0,w,h);
+            
+            ctx.save();
+            ctx.translate(w/2, h/2);
+            ctx.scale(this.cam.zoom, this.cam.zoom);
+            ctx.translate(-this.cam.x, -this.cam.y);
+
+            // 1. Grid
+            ctx.strokeStyle = '#1a1a20'; ctx.lineWidth = 2;
+            for(let i=0; i<3000; i+=200) { 
+                ctx.beginPath(); ctx.moveTo(i,0); ctx.lineTo(i,3000); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(0,i); ctx.lineTo(3000,i); ctx.stroke();
+            }
+
+            // 2. Minefields (Placeholder Visual)
+            ctx.strokeStyle = '#ff005555'; ctx.lineWidth = 1;
+            Game.minefields.forEach(m => {
+                ctx.beginPath(); ctx.arc(m.x, m.y, m.r, 0, Math.PI*2); ctx.stroke();
+            });
+
+            // 3. Stars
+            Game.stars.forEach(s => {
+                const isSel = Game.selection && Game.selection.type==='star' && Game.selection.id===s.id;
+                const col = s.owner === 1 ? '#00f0ff' : (s.owner ? '#ff0055' : '#ffffff');
+                
+                // Scanner Range (if owned)
+                if(s.owner === 1) {
+                    ctx.strokeStyle = '#00f0ff22';
+                    ctx.beginPath(); ctx.arc(s.x, s.y, 200, 0, Math.PI*2); ctx.stroke();
+                }
+
+                ctx.fillStyle = col;
+                ctx.shadowColor = col; ctx.shadowBlur = s.owner?15:0;
+                ctx.beginPath(); ctx.arc(s.x, s.y, s.owner?6:3, 0, Math.PI*2); ctx.fill();
+                ctx.shadowBlur = 0;
+
+                // Name
+                if(s.owner || isSel) {
+                    ctx.fillStyle = '#889'; ctx.font = "10px monospace";
+                    ctx.fillText(s.name, s.x+10, s.y);
+                }
+
+                if(isSel) {
+                    ctx.strokeStyle = '#fff'; ctx.strokeRect(s.x-8, s.y-8, 16, 16);
+                }
+            });
+
+            // 4. Fleets
+            Game.fleets.forEach((f, i) => {
+                const isSel = Game.selection && Game.selection.type==='fleet' && Game.selection.id===i;
+                ctx.fillStyle = '#ffcc00';
+                
+                if(f.dest) {
+                    ctx.strokeStyle = '#aa8800'; ctx.setLineDash([5,5]);
+                    ctx.beginPath(); ctx.moveTo(f.x, f.y); ctx.lineTo(f.dest.x, f.dest.y); ctx.stroke();
+                    ctx.setLineDash([]);
+                }
+
+                ctx.save();
+                ctx.translate(f.x, f.y);
+                if(isSel) { ctx.strokeStyle='#fff'; ctx.beginPath(); ctx.arc(0,0,12,0,Math.PI*2); ctx.stroke(); }
+                // Triangle ship
+                ctx.beginPath(); ctx.moveTo(6,0); ctx.lineTo(-5,4); ctx.lineTo(-5,-4); ctx.fill();
+                ctx.restore();
+            });
+
+            ctx.restore();
+        }
+    };
+
+    // --- UI MANAGER ---
+    const UI = {
+        init: function() {
+            this.renderTech();
+            this.popDropdowns();
+            this.updateHeader();
+        },
+
+        setScreen: function(id) {
+            document.querySelectorAll('.screen-overlay').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.icon-btn').forEach(el => el.classList.remove('active'));
+            
+            if(id !== 'map') document.getElementById(`screen-${id}`).classList.add('active');
+            
+            // Update Stats specific to screens
+            if(id === 'empire') this.updateEmpire();
+            if(id === 'comms') this.updateComms();
+        },
+
+        updateHeader: function() {
+            document.getElementById('g-year').innerText = Game.year;
+            document.getElementById('g-cred').innerText = Game.credits;
+            document.getElementById('g-metal').innerText = Game.minerals;
+        },
+
+        updateEmpire: function() {
+            let pop = 0, tax = 0;
+            Game.stars.filter(s=>s.owner===1).forEach(s=>{ pop+=s.pop; tax+=Math.floor(s.pop/1000); });
+            document.getElementById('emp-pop').innerText = pop.toLocaleString();
+            document.getElementById('emp-tax').innerText = tax + "cr";
+            document.getElementById('emp-maint').innerText = "-" + (Game.fleets.length * 10) + "cr";
+        },
+
+        updateComms: function() {
+            const list = document.getElementById('msg-list');
+            list.innerHTML = "";
+            Game.messages.forEach(m => {
+                const div = document.createElement('div');
+                div.style.padding = "5px"; div.style.borderBottom="1px solid #223"; div.style.cursor="pointer";
+                div.innerHTML = `<span style="color:#0ff">${m.turn}</span> <span style="color:#aa0">[${m.sender}]</span> ${m.txt.substring(0,20)}...`;
+                div.onclick = () => document.getElementById('msg-body').innerText = `FROM: ${m.sender}\nYEAR: ${m.turn}\n\n${m.txt}`;
+                list.appendChild(div);
+            });
+        },
+
+        renderTech: function() {
+            const g = document.getElementById('tech-grid');
+            DB.techs.forEach((t, i) => {
+                const d = document.createElement('div');
+                d.className = 'card';
+                d.innerHTML = `<h3>${t}</h3><div class="val">Level: <span id="tech-lvl-${i}">0</span></div><div class="bar-wrap"><div class="bar-fill" style="width:0%" id="tech-bar-${i}"></div></div>`;
+                g.appendChild(d);
+            });
+        },
+
+        popDropdowns: function() {
+            const fill = (id, list) => {
+                const sel = document.getElementById(id);
+                list.forEach(i => { let o = document.createElement('option'); o.value=i.id; o.text=`${i.name} (${i.cost}cr)`; sel.add(o); });
+            };
+            fill('des-hull', DB.hulls); fill('des-eng', DB.engines); fill('des-wep', DB.weapons);
+            fill('des-shi', DB.weapons); // Placeholder reuse
+            fill('des-spec', DB.specials);
+        },
+
+        updateSide: function() {
+            const p = document.getElementById('ctx-content');
+            const none = document.getElementById('ctx-none');
+            
+            if(!Game.selection) { p.style.display='none'; none.style.display='block'; return; }
+            
+            p.style.display='block'; none.style.display='none';
+            let h = "";
+            
+            if(Game.selection.type === 'star') {
+                const s = Game.stars[Game.selection.id];
+                h += `<h3>${s.name}</h3>`;
+                h += `<div class="panel-block"><div class="stat-row"><span>Owner</span> <span class="val">${s.owner===1?'YOU':(s.owner?'ALIEN':'NONE')}</span></div>`;
+                h += `<div class="stat-row"><span>Pop</span> <span class="val">${s.pop.toLocaleString()}</span></div></div>`;
+                
+                h += `<h3>Resources</h3>`;
+                h += `<div class="stat-row"><span>Iron</span> <span class="val">${s.mins.i}%</span></div><div class="bar-wrap"><div class="bar-fill res-i" style="width:${s.mins.i}%"></div></div>`;
+                h += `<div class="stat-row"><span>Bor</span> <span class="val">${s.mins.b}%</span></div><div class="bar-wrap"><div class="bar-fill res-b" style="width:${s.mins.b}%"></div></div>`;
+                h += `<div class="stat-row"><span>Germ</span> <span class="val">${s.mins.g}%</span></div><div class="bar-wrap"><div class="bar-fill res-g" style="width:${s.mins.g}%"></div></div>`;
+
+                if(s.owner === 1) {
+                    h += `<div class="panel-block" style="margin-top:15px;"><h3>Production</h3>`;
+                    h += `<div class="stat-row"><span>Mines</span> <span class="val">${s.def.mines}</span></div>`;
+                    h += `<div class="stat-row"><span>Factories</span> <span class="val">${s.def.facts}</span></div>`;
+                    h += `<div class="stat-row"><span>Starbase</span> <span class="val">${s.def.base?s.def.base.name:'None'}</span></div>`;
+                    
+                    if(s.queue) {
+                        h += `<div style="color:var(--c-warn); font-size:12px; margin-top:5px;">Building: ${s.queue.bp.name}<br>${Math.floor(s.queue.done)} / ${s.queue.cost}</div>`;
+                    } else {
+                        h += `<button class="action" onclick="Game.build(0)">BUILD PROBE</button>`;
+                        h += `<button class="action" onclick="Game.build(1)">BUILD COLONY</button>`;
+                    }
+                    h += `</div>`;
+                    
+                    // Mass Driver Placeholder
+                    h += `<div class="panel-block"><h3>Mass Driver</h3><input type="range" style="width:100%"><div class="stat-row"><span>Target:</span> <span class="val">None</span></div></div>`;
+                }
+
+            } else {
+                const f = Game.fleets[Game.selection.id];
+                h += `<h3>${f.name}</h3>`;
+                h += `<div class="stat-row"><span>Class</span> <span class="val">${f.design.name}</span></div>`;
+                h += `<div class="stat-row"><span>Fuel</span> <span class="val ${f.fuel<20?'alert':''}">${f.fuel.toFixed(0)}</span></div>`;
+                h += `<div class="stat-row"><span>Mission</span> <span class="val">${f.dest?'Transit':'Orbit'}</span></div>`;
+                h += `<div class="stat-row"><span>Cargo</span> <span class="val">0 / 0</span></div>`;
+                h += `<button class="action" style="border-color:var(--c-alert); color:var(--c-alert)">SCRAP FLEET</button>`;
+            }
+            
+            p.innerHTML = h;
+        }
+    };
+
+    Game.build = function(idx) {
+        if(!Game.selection || Game.selection.type !== 'star') return;
+        const s = Game.stars[Game.selection.id];
+        const bp = Game.designs[idx];
+        if(Game.credits >= bp.cost) {
+            Game.credits -= bp.cost;
+            s.queue = { bp: bp, cost: bp.cost, done: 0 };
+            UI.updateHeader(); UI.updateSide();
+            Game.logMsg(`Construction of ${bp.name} started.`, "Prod");
+        }
+    };
+
+    function dist(a,b) { return Math.hypot(a.x-b.x, a.y-b.y); }
+    function r(n) { return Math.floor(Math.random()*n); }
+
+    window.onload = () => Game.init();
+
+</script>
+</body>
+</html>
