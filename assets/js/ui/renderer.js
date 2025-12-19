@@ -46,8 +46,9 @@ export const Renderer = {
             e.preventDefault();
             if (Game.selection && Game.selection.type === 'fleet') {
                 const w = this.screenToWorld(e.clientX, e.clientY);
-                Game.fleets[Game.selection.id].dest = { x: w.x, y: w.y };
+                Game.fleets[Game.selection.id].dest = { x: Math.round(w.x), y: Math.round(w.y) };
                 Game.logMsg("Fleet course plotted.", "Command");
+                ui.updateComms();
             }
         });
         this.cvs.addEventListener('wheel', e => {

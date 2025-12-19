@@ -75,7 +75,8 @@ class Minefield {
 }
 
 class ResourcePacket {
-    constructor({ x, y, destX, destY, payload, destId, owner }) {
+    constructor({ id, x, y, destX, destY, payload, destId, owner }) {
+        this.id = id;
         this.x = x;
         this.y = y;
         this.destX = destX;
