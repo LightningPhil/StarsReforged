@@ -1,6 +1,7 @@
 import { DB } from "../data/db.js";
 import { Fleet, Message, Minefield, Race, ResourcePacket, ShipDesign, Star } from "../models/entities.js";
-import { dist, r } from "./utils.js";
+import { PCG32 } from "./rng.js";
+import { dist } from "./utils.js";
 
 let ui = null;
 let renderer = null;
@@ -37,6 +38,9 @@ export const Game = {
         progress: 0,
         budget: 15
     },
+    rngSeed: 932515789n,
+    rng: null,
+    nextFleetId: 1,
     race: new Race({
         name: 'The Ashen Arc',
         type: 'Synthetic Nomads',
@@ -60,6 +64,7 @@ export const Game = {
 
     init: function() {
         this.minerals = this.mineralStock.i + this.mineralStock.b + this.mineralStock.g;
+        this.rng = new PCG32(this.rngSeed, 54n);
         this.designs.push(new ShipDesign({
             name: "Probe v1",
             hull: DB.hulls[0],
@@ -92,10 +97,11 @@ export const Game = {
         for (let i = 0; i < count; i++) {
             this.stars.push(new Star({
                 id: i,
-                x: Math.random() * 3200,
-                y: Math.random() * 3200,
+                x: this.rng.nextInt(3200),
+                y: this.rng.nextInt(3200),
                 name: `S-${120 + i}`,
-                owner: null
+                owner: null,
+                rng: this.rng
             }));
         }
     },
@@ -112,7 +118,7 @@ export const Game = {
         h.def.base = { name: "Starbase I", hp: 1000 };
 
         this.fleets.push(new Fleet({
-            id: 1,
+            id: this.nextFleetId++,
             owner: 1,
             x: h.x,
             y: h.y,
@@ -120,7 +126,7 @@ export const Game = {
             design: this.designs[0]
         }));
         this.fleets.push(new Fleet({
-            id: 2,
+            id: this.nextFleetId++,
             owner: 1,
             x: h.x,
             y: h.y,
@@ -157,7 +163,7 @@ export const Game = {
         this.aiDesigns = [enemyDesign, enemyColony];
 
         this.fleets.push(new Fleet({
-            id: 3,
+            id: this.nextFleetId++,
             owner: 2,
             x: rival.x,
             y: rival.y,
@@ -328,7 +334,7 @@ export const Game = {
 
         const raiderDesign = this.aiDesigns[0];
         aiStars.filter(s => !s.queue).forEach(star => {
-            if (this.aiCredits > (raiderDesign?.cost || 0) && Math.random() < 0.25) {
+            if (this.aiCredits > (raiderDesign?.cost || 0) && this.rng.nextInt(100) < 25) {
                 this.queueBuild(star, 0, 2);
             }
         });
@@ -410,7 +416,7 @@ export const Game = {
         const weapon = DB.weapons.find(w => w.id === document.getElementById('des-wep').value);
         const shield = DB.weapons.find(w => w.id === document.getElementById('des-shi').value);
         const special = DB.specials.find(s => s.id === document.getElementById('des-spec').value);
-        const name = document.getElementById('des-name').value || `Design-${r(99)}`;
+        const name = document.getElementById('des-name').value || `Design-${this.rng.nextInt(99)}`;
 
         const design = new ShipDesign({ name, hull, engine, weapon, shield, special });
         this.designs.push(design);
@@ -478,11 +484,11 @@ export const Game = {
 
     spawnShip: function(star, blueprint, ownerId = 1) {
         this.fleets.push(new Fleet({
-            id: Date.now(),
+            id: this.nextFleetId++,
             owner: ownerId,
             x: star.x,
             y: star.y,
-            name: `${blueprint.name} ${r(99)}`,
+            name: `${blueprint.name} ${this.rng.nextInt(99)}`,
             design: blueprint
         }));
     },
@@ -528,15 +534,15 @@ export const Game = {
     },
 
     generateCombat: function(attacker, defenderStar) {
-        const attackPower = attacker.design.bv + r(30);
+        const attackPower = attacker.design.bv + this.rng.nextInt(30);
         const defensePower = (defenderStar.def.base ? 120 : 40) + defenderStar.def.mines;
         const rounds = [];
         let attackerHP = attacker.hp;
         let defenderHP = defensePower * 2;
 
         for (let round = 1; round <= 3; round++) {
-            const atk = attacker.design.weapon.dmg + r(10);
-            const def = Math.floor(defensePower / 4) + r(8);
+            const atk = attacker.design.weapon.dmg + this.rng.nextInt(10);
+            const def = Math.floor(defensePower / 4) + this.rng.nextInt(8);
             defenderHP -= atk;
             attackerHP -= def;
             rounds.push(`Round ${round}: ${attacker.name} hits for ${atk}. Defenses reply for ${def}.`);
