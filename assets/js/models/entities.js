@@ -9,13 +9,24 @@ class Star {
         const roll = (max = 100) => (rng ? rng.nextInt(max) : 0);
         const envRoll = (max = 100) => (rng ? rng.nextInt(max) : Math.floor(max / 2));
         this.mins = { i: roll(), b: roll(), g: roll() };
+        this.concentration = { ...this.mins };
         this.environment = {
             grav: envRoll(100),
             temp: envRoll(100),
             rad: envRoll(100)
         };
+        this.habitability = 0;
+        this.deathRate = 0;
+        this.factories = 0;
+        this.mines = 0;
         this.def = { mines: 0, facts: 0, base: null };
         this.queue = null;
+        this.terraforming = {
+            active: false,
+            target: null,
+            progress: 0
+        };
+        this.autoBuild = null;
         this.visible = false;
         this.known = false;
         this.snapshot = null;
@@ -30,8 +41,15 @@ class Star {
             owner: this.owner,
             pop: this.pop,
             mins: { ...this.mins },
+            concentration: { ...this.concentration },
             environment: { ...this.environment },
             def: { ...this.def },
+            habitability: this.habitability,
+            deathRate: this.deathRate,
+            factories: this.factories,
+            mines: this.mines,
+            terraforming: this.terraforming ? { ...this.terraforming } : null,
+            autoBuild: this.autoBuild ? { ...this.autoBuild } : null,
             hasStargate: this.hasStargate,
             stargateMassLimit: this.stargateMassLimit,
             stargateRange: this.stargateRange,

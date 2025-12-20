@@ -330,6 +330,8 @@ export const Game = {
         h.pop = 62000;
         h.def.mines = 120;
         h.def.facts = 140;
+        h.mines = 120;
+        h.factories = 140;
         h.def.base = { name: "Starbase I", hp: 1000 };
         h.hasStargate = true;
         h.stargateMassLimit = 420;
@@ -711,6 +713,8 @@ export const Game = {
             star.pop = 2500;
             star.def.mines = 20;
             star.def.facts = 20;
+            star.mines = 20;
+            star.factories = 20;
             this.logMsg(`${star.name} Colonized!`, "Expansion");
             this.fleets = this.fleets.filter(x => x.id !== fleet.id);
             return;
@@ -730,8 +734,10 @@ export const Game = {
     completeStructure: function(star, queue) {
         if (queue.kind === 'mine') {
             star.def.mines += queue.count;
+            star.mines = (star.mines || 0) + queue.count;
         } else if (queue.kind === 'factory') {
             star.def.facts += queue.count;
+            star.factories = (star.factories || 0) + queue.count;
         } else if (queue.kind === 'base') {
             star.def.base = { name: "Starbase I", hp: 1000 };
         }
@@ -776,7 +782,18 @@ export const Game = {
         if (ownerId === 1) {
             this.credits = economy.credits;
         }
-        star.queue = { type: 'ship', bp: blueprint, cost: adjustedCost, done: 0, owner: ownerId };
+        star.queue = {
+            type: 'ship',
+            bp: blueprint,
+            cost: adjustedCost,
+            done: 0,
+            owner: ownerId,
+            mineralCost: {
+                i: Math.ceil(adjustedCost * 0.4),
+                b: Math.ceil(adjustedCost * 0.3),
+                g: Math.ceil(adjustedCost * 0.3)
+            }
+        };
         if (ownerId === 1) {
             this.logMsg(`Construction of ${blueprint.name} started at ${star.name}.`, "Industry");
         }
@@ -805,7 +822,19 @@ export const Game = {
         if (ownerId === 1) {
             this.credits = economy.credits;
         }
-        star.queue = { type: 'structure', kind, count, cost, done: 0, owner: ownerId };
+        star.queue = {
+            type: 'structure',
+            kind,
+            count,
+            cost,
+            done: 0,
+            owner: ownerId,
+            mineralCost: {
+                i: Math.ceil(cost * 0.4),
+                b: Math.ceil(cost * 0.3),
+                g: Math.ceil(cost * 0.3)
+            }
+        };
         if (ownerId === 1) {
             this.logMsg(`Construction of ${structure.name} queued at ${star.name}.`, "Industry");
         }
