@@ -15,6 +15,30 @@ const sumStat = (components, key) => components.reduce((sum, component) => (
 const maxStat = (components, key) => components.reduce((max, component) => (
     Math.max(max, component.stats?.[key] || 0)
 ), 0);
+const sumPowerStat = (sources, power = 4) => sources.reduce((sum, value) => (
+    sum + Math.pow(Math.max(0, value), power)
+), 0);
+const collectScannerSources = (hull, components) => {
+    const sources = [];
+    if (Number.isFinite(hull.scanner)) {
+        sources.push(hull.scanner);
+    }
+    components.forEach(component => {
+        const scanner = component.stats?.scanner;
+        if (Number.isFinite(scanner) && scanner > 0) {
+            sources.push(scanner);
+        }
+    });
+    return sources;
+};
+const resolveScannerStrength = (hull, components) => {
+    const sources = collectScannerSources(hull, components);
+    if (!sources.length) {
+        return 0;
+    }
+    const sum = sumPowerStat(sources, 4);
+    return sum > 0 ? Math.floor(Math.pow(sum, 0.25)) : 0;
+};
 
 const getTechLevel = (techState, fieldId) => techState?.fields?.[fieldId]?.level ?? 0;
 
@@ -91,6 +115,9 @@ export const calculateDesignStats = (hull, components, techState = null) => {
     const mineLayingCapacity = sumStat(components, "mineLayingCapacity") || mineCapacity;
     const mineSweepingStrength = sumStat(components, "mineSweep");
     const signature = (hull.signature || Math.ceil(hull.baseMass / 20)) + Math.ceil(mass / 120);
+    const scanner = resolveScannerStrength(hull, components);
+    const camo = Math.max(0, Math.floor((hull.camo || 0) + sumStat(components, "camo")));
+    const cloak = Math.max(0, Math.min(95, Math.floor(camo)));
     const beamRange = Math.max(0, maxStat(components, "beamRange"));
     const torpedoRange = Math.max(0, maxStat(components, "torpedoRange"));
     const bombing = Math.max(0, Math.floor(sumStat(components, "bombing") + torpedoDamage * 0.2));
@@ -113,6 +140,9 @@ export const calculateDesignStats = (hull, components, techState = null) => {
         powerOutput,
         powerUsage,
         signature,
+        scanner,
+        camo,
+        cloak,
         mineCapacity,
         mineLayingCapacity,
         mineSweepingStrength,

@@ -158,6 +158,15 @@ export const serializeUniverseState = (gameState) => createUniverseStateDTO({
         id,
         intel.map(record => ({ ...record, center: { ...record.center } }))
     ]))) : {},
+    wormholeIntel: gameState.wormholeIntel ? Object.fromEntries(Object.entries(gameState.wormholeIntel).map(([id, intel]) => ([
+        id,
+        intel.map(record => ({
+            ...record,
+            entry: record.entry ? { ...record.entry } : null,
+            exit: record.exit ? { ...record.exit } : null,
+            endpoints: record.endpoints ? record.endpoints.map(endpoint => ({ ...endpoint })) : null
+        }))
+    ]))) : {},
     empireCache: { ...gameState.empireCache },
     state: gameState.state,
     winnerEmpireId: gameState.winnerEmpireId,

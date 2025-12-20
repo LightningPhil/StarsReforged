@@ -65,7 +65,8 @@ export const Renderer = {
                     this.tooltip.style.left = `${e.clientX + 12}px`;
                     this.tooltip.style.top = `${e.clientY + 12}px`;
                     const ownerLabel = hit.ownerEmpireId === 1 ? 'Friendly' : (hit.ownerEmpireId ? 'Hostile' : 'Unknown');
-                    this.tooltip.innerHTML = `<div class=\"tip-title\">Minefield</div><div>Owner: ${ownerLabel}</div><div>Radius: ${Math.floor(hit.radius)} ly</div><div>Strength: ${hit.estimatedStrength}</div>`;
+                    const strengthLabel = Number.isFinite(hit.estimatedStrength) ? hit.estimatedStrength : 'Unknown';
+                    this.tooltip.innerHTML = `<div class=\"tip-title\">Minefield</div><div>Owner: ${ownerLabel}</div><div>Radius: ${Math.floor(hit.radius)} ly</div><div>Strength: ${strengthLabel}</div>`;
                 } else {
                     this.tooltip.style.opacity = '0';
                 }
@@ -232,7 +233,7 @@ export const Renderer = {
             const baseColor = isFriendly ? '0, 240, 255' : (isHostile ? '255, 0, 85' : '180, 180, 200');
             const flicker = 0.5 + Math.sin(this.time * 16 + field.id) * 0.2;
             const area = Math.PI * field.radius * field.radius;
-            const density = area > 0 ? field.estimatedStrength / area : 0;
+            const density = area > 0 ? (field.estimatedStrength || 0) / area : 0;
             const glow = Math.min(1, density * 18);
             ctx.save();
             ctx.strokeStyle = `rgba(${baseColor}, ${0.25 + glow * 0.5})`;
@@ -366,7 +367,7 @@ export const Renderer = {
 
     drawFleets: function(ctx) {
         Game.fleets.forEach((fleet, i) => {
-            const visible = fleet.owner === 1 || Game.activeScanners.some(scan => dist(scan, fleet) <= scan.r);
+            const visible = fleet.owner === 1 || (fleet.intelState && fleet.intelState !== "none");
             if (!visible) {
                 return;
             }
