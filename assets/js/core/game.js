@@ -7,6 +7,7 @@ import { AIController } from "../ai/AIController.js";
 import { loadConfig } from "./config.js";
 import { calculateScores, resolveDefeats } from "./gameResolution.js";
 import { VictoryResolver } from "./victoryResolver.js";
+import { loadGameStateFromFiles } from "./loadState.js";
 import {
     adjustAllocationForField,
     calculateEmpireResearchPoints,
@@ -94,18 +95,27 @@ export const Game = {
         this.rules = configs.rules;
         this.aiConfig = configs.ai;
         this.aiDifficulty = configs.ai.defaultDifficulty || "normal";
-        this.setupPlayers();
-        this.researchFocus = this.rules.technologyFields?.[0]?.id || null;
-        this.minerals = this.mineralStock.i + this.mineralStock.b + this.mineralStock.g;
-        this.rng = new PCG32(this.rngSeed, 54n);
-        this.turnHash = this.hashTurnSeed(this.rngSeed, BigInt(this.turnCount));
-        this.seedShipDesigns();
+        const loadedState = await loadGameStateFromFiles({
+            playerId: 1,
+            rules: this.rules,
+            aiConfig: this.aiConfig
+        });
+        if (loadedState) {
+            this.applyLoadedState(loadedState);
+        } else {
+            this.setupPlayers();
+            this.researchFocus = this.rules.technologyFields?.[0]?.id || null;
+            this.minerals = this.mineralStock.i + this.mineralStock.b + this.mineralStock.g;
+            this.rng = new PCG32(this.rngSeed, 54n);
+            this.turnHash = this.hashTurnSeed(this.rngSeed, BigInt(this.turnCount));
+            this.seedShipDesigns();
 
-        this.generateGalaxy(80);
-        this.seedHomeworld();
-        this.seedRivals();
+            this.generateGalaxy(80);
+            this.seedHomeworld();
+            this.seedRivals();
 
-        this.logMsg("Welcome, Emperor. The sector is uncharted.", "System");
+            this.logMsg("Welcome, Emperor. The sector is uncharted.", "System");
+        }
 
         if (renderer?.init) {
             renderer.init();
@@ -114,6 +124,48 @@ export const Game = {
             ui.init();
         }
         this.updateVisibility();
+    },
+
+    applyLoadedState: function(loadedState) {
+        this.turnCount = loadedState.turnCount ?? this.turnCount;
+        this.year = loadedState.year ?? this.year;
+        this.rules = loadedState.rules ?? this.rules;
+        this.aiConfig = loadedState.aiConfig ?? this.aiConfig;
+        this.players = loadedState.players ?? this.players;
+        this.economy = loadedState.economy ?? this.economy;
+        this.stars = loadedState.stars ?? this.stars;
+        this.fleets = loadedState.fleets ?? this.fleets;
+        this.packets = loadedState.packets ?? this.packets;
+        this.minefields = loadedState.minefields ?? this.minefields;
+        this.shipDesigns = loadedState.shipDesigns ?? this.shipDesigns;
+        this.minefieldIntel = loadedState.minefieldIntel ?? this.minefieldIntel;
+        this.messages = loadedState.messages ?? this.messages;
+        this.battles = loadedState.battles ?? this.battles;
+        this.sectorScans = loadedState.sectorScans ?? this.sectorScans;
+        this.logs = loadedState.logs ?? this.logs;
+        this.turnHash = loadedState.turnHash ?? this.turnHash;
+        this.empireCache = loadedState.empireCache ?? this.empireCache;
+        this.state = loadedState.state ?? this.state;
+        this.winnerEmpireId = loadedState.winnerEmpireId ?? this.winnerEmpireId;
+        this.researchFocus = loadedState.researchFocus ?? this.researchFocus;
+        this.rngSeed = loadedState.rngSeed ?? this.rngSeed;
+        this.rng = loadedState.rng ?? new PCG32(this.rngSeed, 54n);
+        this.nextFleetId = loadedState.nextFleetId ?? this.nextFleetId;
+        this.nextPacketId = loadedState.nextPacketId ?? this.nextPacketId;
+        this.race = loadedState.race ?? this.race;
+        this.diplomacy = loadedState.diplomacy ?? this.diplomacy;
+        this.orders = loadedState.orders ?? this.orders;
+        this.combatReports = loadedState.combatReports ?? this.combatReports;
+        this.turnHistory = loadedState.turnHistory ?? this.turnHistory;
+        this.turnEvents = loadedState.turnEvents ?? this.turnEvents;
+        this.orderErrors = loadedState.orderErrors ?? this.orderErrors;
+
+        const humanEconomy = this.economy?.[1];
+        if (humanEconomy) {
+            this.credits = humanEconomy.credits;
+            this.mineralStock = { ...humanEconomy.mineralStock };
+            this.minerals = humanEconomy.minerals;
+        }
     },
 
     hashMix: function(hash, value) {
