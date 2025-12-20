@@ -9,6 +9,7 @@ import { enforceAllocationRules, resolveRaceModifiers } from "./raceTraits.js";
 
 const getFleetById = (state, fleetId) => state.fleets.find(fleet => fleet.id === fleetId);
 const getStarById = (state, starId) => state.stars.find(star => star.id === starId);
+const DEFAULT_MINERAL_RATIO = { i: 0.4, b: 0.3, g: 0.3 };
 
 const logOrderError = (state, message) => {
     if (!state.orderErrors) {
@@ -82,7 +83,18 @@ const resolveBuildShips = (state, order) => {
         return;
     }
     economy.credits -= adjustedCost;
-    star.queue = { type: "ship", bp: blueprint, cost: adjustedCost, done: 0, owner: order.issuerId };
+    star.queue = {
+        type: "ship",
+        bp: blueprint,
+        cost: adjustedCost,
+        done: 0,
+        owner: order.issuerId,
+        mineralCost: {
+            i: Math.ceil(adjustedCost * DEFAULT_MINERAL_RATIO.i),
+            b: Math.ceil(adjustedCost * DEFAULT_MINERAL_RATIO.b),
+            g: Math.ceil(adjustedCost * DEFAULT_MINERAL_RATIO.g)
+        }
+    };
 };
 
 const resolveLayMines = (state, order) => {

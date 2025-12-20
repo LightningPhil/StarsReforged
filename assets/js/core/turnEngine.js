@@ -16,16 +16,23 @@ import {
     getTechnologyStateForEmpire,
     resolveResearchForEmpire
 } from "./technologyResolver.js";
-import { resolvePopulationGrowth } from "./economyResolver.js";
+import { resolvePlanetEconomy } from "./planetEconomyResolver.js";
 import { resolveRaceModifiers } from "./raceTraits.js";
 
 const cloneStar = (star) => {
     const clone = new Star({ id: star.id, x: star.x, y: star.y, name: star.name, owner: star.owner });
     clone.pop = star.pop;
     clone.mins = { ...star.mins };
+    clone.concentration = star.concentration ? { ...star.concentration } : { ...clone.mins };
     clone.environment = star.environment ? { ...star.environment } : clone.environment;
+    clone.habitability = star.habitability ?? clone.habitability;
+    clone.deathRate = star.deathRate ?? clone.deathRate;
+    clone.factories = star.factories ?? clone.factories;
+    clone.mines = star.mines ?? clone.mines;
     clone.def = { ...star.def };
     clone.queue = star.queue ? { ...star.queue } : null;
+    clone.autoBuild = star.autoBuild ? { ...star.autoBuild } : null;
+    clone.terraforming = star.terraforming ? { ...star.terraforming } : clone.terraforming;
     clone.visible = star.visible;
     clone.known = star.known;
     clone.snapshot = star.snapshot ? { ...star.snapshot } : null;
@@ -220,84 +227,6 @@ const resolveCombat = (state) => {
     });
 };
 
-const resolveProduction = (state) => {
-    let taxTotal = 0;
-    let industrialOutput = 0;
-    state.stars
-        .filter(star => star.owner)
-        .sort((a, b) => a.id - b.id)
-        .forEach(star => {
-            const income = Math.floor(star.pop / 900);
-            const iGain = Math.floor((star.def.mines * star.mins.i) / 120);
-            const bGain = Math.floor((star.def.mines * star.mins.b) / 120);
-            const gGain = Math.floor((star.def.mines * star.mins.g) / 120);
-
-            const economy = state.economy?.[star.owner];
-            if (!economy) {
-                return;
-            }
-            if (star.owner === 1) {
-                taxTotal += income;
-                industrialOutput += star.def.facts;
-            }
-            economy.credits += income;
-            economy.mineralStock.i += iGain;
-            economy.mineralStock.b += bGain;
-            economy.mineralStock.g += gGain;
-
-            if (star.queue) {
-                star.queue.done += star.def.facts;
-                if (star.queue.done >= star.queue.cost) {
-                    if (star.queue.type === "ship") {
-                        const fleetId = state.nextFleetId++;
-                        state.fleets.push(new Fleet({
-                            id: fleetId,
-                            owner: star.queue.owner,
-                            x: star.x,
-                            y: star.y,
-                            name: `${star.queue.bp.name} ${fleetId}`,
-                            design: star.queue.bp
-                        }));
-                    } else if (star.queue.type === "structure") {
-                        if (star.queue.kind === "mine") {
-                            star.def.mines += star.queue.count;
-                        } else if (star.queue.kind === "factory") {
-                            star.def.facts += star.queue.count;
-                        } else if (star.queue.kind === "base") {
-                            star.def.base = { name: "Starbase I", hp: 1000 };
-                        }
-                    }
-                    star.queue = null;
-                }
-            }
-        });
-
-    Object.values(state.economy || {}).forEach(entry => {
-        entry.minerals = entry.mineralStock.i + entry.mineralStock.b + entry.mineralStock.g;
-    });
-    const playerEconomy = state.economy?.[1];
-    if (playerEconomy) {
-        state.credits = playerEconomy.credits;
-        state.mineralStock = { ...playerEconomy.mineralStock };
-        state.minerals = playerEconomy.minerals;
-    }
-    state.empireCache = { taxTotal, industrialOutput };
-};
-
-const resolvePopulation = (state) => {
-    state.stars
-        .filter(star => star.owner)
-        .sort((a, b) => a.id - b.id)
-        .forEach(star => {
-            const modifiers = getTechnologyModifiers(getTechnologyStateForEmpire(state, star.owner));
-            star.pop = resolvePopulationGrowth({
-                star,
-                race: state.race,
-                techModifiers: modifiers
-            });
-        });
-};
-
 const resolveResearch = (state) => {
     const raceModifiers = resolveRaceModifiers(state.race).modifiers;
     state.players.forEach(player => {
@@ -385,6 +314,8 @@ const resolveColonization = (state) => {
             star.pop = 2500;
             star.def.mines = 20;
             star.def.facts = 20;
+            star.mines = 20;
+            star.factories = 20;
             state.fleets = state.fleets.filter(item => item.id !== fleet.id);
         });
 };
@@ -414,11 +345,10 @@ export const TurnEngine = {
         resolveMinefieldTransitDamage(state);
         resolveMinefieldDecay(state);
         resolveStargateJumps(state);
+        resolvePlanetEconomy(state);
         resolveCombat(state);
         resolveColonization(state);
         resolveResearch(state);
-        resolveProduction(state);
-        resolvePopulation(state);
         resolveVisibility(state);
 
         state.orders = [];

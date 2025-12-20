@@ -242,17 +242,28 @@ export const deserializeUniverseState = (state) => {
             b: dto.mins?.b ?? 0,
             g: dto.mins?.g ?? 0
         };
+        star.concentration = {
+            i: dto.concentration?.i ?? star.mins.i,
+            b: dto.concentration?.b ?? star.mins.b,
+            g: dto.concentration?.g ?? star.mins.g
+        };
         star.environment = {
             grav: dto.environment?.grav ?? star.environment.grav,
             temp: dto.environment?.temp ?? star.environment.temp,
             rad: dto.environment?.rad ?? star.environment.rad
         };
+        star.habitability = dto.habitability ?? star.habitability ?? 0;
+        star.deathRate = dto.deathRate ?? star.deathRate ?? 0;
+        star.factories = dto.factories ?? dto.def?.facts ?? star.factories ?? 0;
+        star.mines = dto.mines ?? dto.def?.mines ?? star.mines ?? 0;
         star.def = {
             mines: dto.def?.mines ?? 0,
             facts: dto.def?.facts ?? 0,
             base: dto.def?.base ?? null
         };
         star.queue = dto.queue ? { ...dto.queue } : null;
+        star.autoBuild = dto.autoBuild ? { ...dto.autoBuild } : null;
+        star.terraforming = dto.terraforming ? { ...dto.terraforming } : star.terraforming;
         star.visible = dto.visible || false;
         star.known = dto.known || false;
         star.snapshot = dto.snapshot ? { ...dto.snapshot } : null;
