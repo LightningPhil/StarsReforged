@@ -136,12 +136,14 @@ export const AIController = {
         const raider = buildShipDesign({
             name: "Raider",
             hull: scoutHull,
-            componentIds: ["ion_drive", "laser_array", "armor_plating"]
+            componentIds: ["ion_drive", "laser_array", "armor_plating"],
+            race: gameState.race
         });
         const colonizer = buildShipDesign({
             name: "Seeder",
             hull: frigateHull,
-            componentIds: ["ion_drive", "laser_array", "colony_pod", "reactor_core"]
+            componentIds: ["ion_drive", "laser_array", "colony_pod", "reactor_core"],
+            race: gameState.race
         });
         [raider, colonizer].forEach(result => {
             if (result.design) {

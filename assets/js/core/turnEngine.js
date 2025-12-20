@@ -16,11 +16,14 @@ import {
     getTechnologyStateForEmpire,
     resolveResearchForEmpire
 } from "./technologyResolver.js";
+import { resolvePopulationGrowth } from "./economyResolver.js";
+import { resolveRaceModifiers } from "./raceTraits.js";
 
 const cloneStar = (star) => {
     const clone = new Star({ id: star.id, x: star.x, y: star.y, name: star.name, owner: star.owner });
     clone.pop = star.pop;
     clone.mins = { ...star.mins };
+    clone.environment = star.environment ? { ...star.environment } : clone.environment;
     clone.def = { ...star.def };
     clone.queue = star.queue ? { ...star.queue } : null;
     clone.visible = star.visible;
@@ -287,19 +290,23 @@ const resolvePopulation = (state) => {
         .sort((a, b) => a.id - b.id)
         .forEach(star => {
             const modifiers = getTechnologyModifiers(getTechnologyStateForEmpire(state, star.owner));
-            const grown = Math.floor(star.pop * 1.02 * modifiers.populationGrowth);
-            star.pop = Math.min(1500000, grown);
+            star.pop = resolvePopulationGrowth({
+                star,
+                race: state.race,
+                techModifiers: modifiers
+            });
         });
 };
 
 const resolveResearch = (state) => {
+    const raceModifiers = resolveRaceModifiers(state.race).modifiers;
     state.players.forEach(player => {
         const techState = getTechnologyStateForEmpire(state, player.id);
         if (!techState) {
             return;
         }
-        const totalRP = calculateEmpireResearchPoints(state, player.id);
-        resolveResearchForEmpire(techState, totalRP, state.rules);
+        const totalRP = calculateEmpireResearchPoints(state, player.id, raceModifiers);
+        resolveResearchForEmpire(techState, totalRP, state.rules, raceModifiers);
     });
 };
 

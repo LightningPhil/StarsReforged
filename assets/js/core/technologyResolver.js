@@ -40,7 +40,7 @@ const sanitizeAllocation = (allocation, fields) => {
     return { sanitized, total };
 };
 
-export const normalizeAllocation = (allocation, fields) => {
+export const normalizeAllocation = (allocation, fields, allocationRules = null) => {
     if (!fields?.length) {
         return {};
     }
@@ -56,14 +56,17 @@ export const normalizeAllocation = (allocation, fields) => {
     fields.forEach(field => {
         normalized[field.id] = sanitized[field.id] / total;
     });
+    if (allocationRules) {
+        return allocationRules(normalized, fields);
+    }
     return normalized;
 };
 
-export const adjustAllocationForField = (allocation, fields, fieldId, share) => {
+export const adjustAllocationForField = (allocation, fields, fieldId, share, allocationRules = null) => {
     if (!fields?.length) {
         return {};
     }
-    const normalized = normalizeAllocation(allocation, fields);
+    const normalized = normalizeAllocation(allocation, fields, allocationRules);
     const clampedShare = Math.max(0, Math.min(1, share));
     const remaining = 1 - clampedShare;
     const others = fields.filter(field => field.id !== fieldId);
@@ -73,6 +76,9 @@ export const adjustAllocationForField = (allocation, fields, fieldId, share) => 
         updated[field.id] = otherTotal > 0 ? ((normalized[field.id] || 0) / otherTotal) * remaining : remaining / others.length;
     });
     updated[fieldId] = clampedShare;
+    if (allocationRules) {
+        return allocationRules(updated, fields);
+    }
     return updated;
 };
 
@@ -81,33 +87,36 @@ export const createTechnologyState = (fields, allocation = DEFAULT_ALLOCATION) =
     allocation: normalizeAllocation(allocation, fields)
 });
 
-export const getRpToNextLevel = (level, rules) => {
+export const getRpToNextLevel = (level, rules, raceModifiers = {}) => {
     const baseCost = rules?.research?.baseCost ?? 100;
     const exponent = rules?.research?.costExponent ?? 1.5;
-    return Math.floor(baseCost * Math.pow(level, exponent));
+    const raceMultiplier = Number.isFinite(raceModifiers?.researchCostMultiplier) ? raceModifiers.researchCostMultiplier : 1;
+    return Math.floor(baseCost * Math.pow(level, exponent) * raceMultiplier);
 };
 
-export const calculateEmpireResearchPoints = (state, empireId) => {
+export const calculateEmpireResearchPoints = (state, empireId, raceModifiers = {}) => {
     const modifier = state.rules?.research?.populationModifier ?? 0.1;
     const totalPop = state.stars
         .filter(star => star.owner === empireId)
         .reduce((sum, star) => sum + star.pop, 0);
-    return totalPop * modifier;
+    const raceBonus = Number.isFinite(raceModifiers?.researchPointMultiplier) ? raceModifiers.researchPointMultiplier : 1;
+    return totalPop * modifier * raceBonus;
 };
 
-export const resolveResearchForEmpire = (techState, totalRP, rules) => {
+export const resolveResearchForEmpire = (techState, totalRP, rules, raceModifiers = {}) => {
     if (!techState || !techState.fields) {
         return;
     }
     const allocations = techState.allocation || {};
     Object.values(techState.fields).forEach(field => {
         const share = allocations[field.id] ?? 0;
-        field.storedRP += totalRP * share;
-        let threshold = getRpToNextLevel(field.level, rules);
+        const fieldBonus = raceModifiers?.researchFieldBonus?.[field.id] || 0;
+        field.storedRP += totalRP * share * (1 + fieldBonus);
+        let threshold = getRpToNextLevel(field.level, rules, raceModifiers);
         while (field.storedRP >= threshold && threshold > 0) {
             field.storedRP -= threshold;
             field.level += 1;
-            threshold = getRpToNextLevel(field.level, rules);
+            threshold = getRpToNextLevel(field.level, rules, raceModifiers);
         }
     });
 };

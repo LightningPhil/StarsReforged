@@ -13,6 +13,7 @@ const serializeStar = (star) => ({
     owner: star.owner,
     pop: star.pop,
     mins: { ...star.mins },
+    environment: star.environment ? { ...star.environment } : null,
     def: { ...star.def },
     queue: star.queue ? { ...star.queue } : null,
     visible: star.visible,

@@ -9,6 +9,7 @@ import { VictoryResolver } from "../assets/js/core/victoryResolver.js";
 import { createTechnologyState, resolveResearchForEmpire } from "../assets/js/core/technologyResolver.js";
 import { PCG32 } from "../assets/js/core/rng.js";
 import { buildShipDesign } from "../assets/js/core/shipDesign.js";
+import { resolveRaceModifiers } from "../assets/js/core/raceTraits.js";
 import { Minefield } from "../assets/js/models/minefield.js";
 import { Star, Fleet, Race } from "../assets/js/models/entities.js";
 import { ORDER_TYPES } from "../assets/js/models/orders.js";
@@ -18,9 +19,9 @@ const rules = JSON.parse(fs.readFileSync(rulesPath, "utf-8"));
 const techFieldsPath = fileURLToPath(new URL("../config/technologyFields.json", import.meta.url));
 const technologyFields = JSON.parse(fs.readFileSync(techFieldsPath, "utf-8")).fields;
 
-const createDesign = (name, hullId, componentIds) => {
+const createDesign = (name, hullId, componentIds, race) => {
     const hull = rules.hulls.find(entry => entry.id === hullId);
-    const result = buildShipDesign({ name, hull, componentIds });
+    const result = buildShipDesign({ name, hull, componentIds, race });
     return result.design;
 };
 
@@ -37,9 +38,19 @@ const createBaseState = () => {
         star.def.facts = 20;
     });
 
-    const humanDesign = createDesign("Probe", "scout", ["ion_drive", "laser_array", "scanner_array"]);
-    const aiRaider = createDesign("Raider", "scout", ["ion_drive", "laser_array", "armor_plating"]);
-    const aiColonizer = createDesign("Seeder", "frigate", ["ion_drive", "laser_array", "colony_pod", "reactor_core"]);
+    const race = new Race({
+        name: "Test",
+        type: "Synthetic",
+        grav: "1g",
+        temp: "0",
+        growth: "",
+        mining: "",
+        primaryTrait: "adaptive_biology",
+        lesserTraits: ["rapid_breeding"]
+    });
+    const humanDesign = createDesign("Probe", "scout", ["ion_drive", "laser_array", "scanner_array"], race);
+    const aiRaider = createDesign("Raider", "scout", ["ion_drive", "laser_array", "armor_plating"], race);
+    const aiColonizer = createDesign("Seeder", "frigate", ["ion_drive", "laser_array", "colony_pod", "reactor_core"], race);
 
     return {
         turnCount: 0,
@@ -74,14 +85,7 @@ const createBaseState = () => {
         rng,
         nextFleetId: 1,
         nextPacketId: 1,
-        race: new Race({
-            name: "Test",
-            type: "Synthetic",
-            grav: "1g",
-            temp: "0",
-            growth: "",
-            mining: ""
-        }),
+        race,
         diplomacy: { status: { 2: "Neutral" }, lastWarning: 0 },
         players: [
             { id: 1, type: "human", status: "active", eliminatedAtTurn: null, technology: createTechnologyState(technologyFields) },
@@ -205,14 +209,15 @@ const testResearchProgression = () => {
     state.stars[0].pop = 10000;
     const techState = state.players[0].technology;
     techState.allocation = { WEAP: 1, PROP: 0, CONST: 0, ELEC: 0, ENER: 0, BIOT: 0, TERR: 0 };
-    resolveResearchForEmpire(techState, 10000 * rules.research.populationModifier, state.rules);
+    const raceModifiers = resolveRaceModifiers(state.race).modifiers;
+    resolveResearchForEmpire(techState, 10000 * rules.research.populationModifier, state.rules, raceModifiers);
     assert.ok(techState.fields.WEAP.level > 1, "Weapons tech should advance with sufficient RP");
 };
 
 const testMineDamageDeterminism = () => {
     const createStateWithMine = () => {
         const state = createBaseState();
-        const design = createDesign("Runner", "scout", ["ion_drive", "laser_array", "armor_plating"]);
+        const design = createDesign("Runner", "scout", ["ion_drive", "laser_array", "armor_plating"], state.race);
         const fleet = new Fleet({
             id: state.nextFleetId++,
             owner: 1,
