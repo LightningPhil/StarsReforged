@@ -242,6 +242,11 @@ export const deserializeUniverseState = (state) => {
             b: dto.mins?.b ?? 0,
             g: dto.mins?.g ?? 0
         };
+        star.environment = {
+            grav: dto.environment?.grav ?? star.environment.grav,
+            temp: dto.environment?.temp ?? star.environment.temp,
+            rad: dto.environment?.rad ?? star.environment.rad
+        };
         star.def = {
             mines: dto.def?.mines ?? 0,
             facts: dto.def?.facts ?? 0,

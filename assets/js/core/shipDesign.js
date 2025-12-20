@@ -1,5 +1,6 @@
 import { ShipDesign } from "../models/entities.js";
 import { getComponentById } from "../models/technology.js";
+import { resolveRaceModifiers } from "./raceTraits.js";
 
 const createDesignId = () => {
     if (typeof crypto !== "undefined" && crypto.randomUUID) {
@@ -100,13 +101,38 @@ export const validateDesign = (hull, components) => {
     return { valid: errors.length === 0, errors, stats };
 };
 
-export const buildShipDesign = ({ name, hull, componentIds = [], designId }) => {
+const validateRaceAvailability = (hull, components, raceModifiers) => {
+    const errors = [];
+    if (!raceModifiers) {
+        return errors;
+    }
+    if (raceModifiers.restrictedHulls?.includes(hull?.id)) {
+        errors.push(`Hull ${hull.name} is unavailable for this race.`);
+    }
+    const componentIds = components.map(component => component.id);
+    const restrictedComponents = raceModifiers.restrictedComponents || [];
+    restrictedComponents.forEach(restrictedId => {
+        if (componentIds.includes(restrictedId)) {
+            errors.push(`Component ${restrictedId} is unavailable for this race.`);
+        }
+    });
+    return errors;
+};
+
+export const buildShipDesign = ({ name, hull, componentIds = [], designId, race = null }) => {
     const components = componentIds.map(id => getComponentById(id)).filter(Boolean);
     const validation = validateDesign(hull, components);
     if (!validation.valid) {
         return { design: null, errors: validation.errors, stats: validation.stats };
     }
-    const cost = hull.cost + components.reduce((sum, component) => sum + component.cost, 0);
+    const { modifiers, errors: raceErrors } = resolveRaceModifiers(race);
+    const availabilityErrors = validateRaceAvailability(hull, components, modifiers);
+    const combinedErrors = [...raceErrors, ...availabilityErrors];
+    if (combinedErrors.length) {
+        return { design: null, errors: combinedErrors, stats: validation.stats };
+    }
+    const baseCost = hull.cost + components.reduce((sum, component) => sum + component.cost, 0);
+    const cost = Math.ceil(baseCost * (modifiers.shipCostMultiplier || 1));
     const finalStats = validation.stats;
     const design = new ShipDesign({
         designId: designId || createDesignId(),

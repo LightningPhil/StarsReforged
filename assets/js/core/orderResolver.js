@@ -5,6 +5,7 @@ import {
     getTechnologyStateForEmpire,
     normalizeAllocation
 } from "./technologyResolver.js";
+import { enforceAllocationRules, resolveRaceModifiers } from "./raceTraits.js";
 
 const getFleetById = (state, fleetId) => state.fleets.find(fleet => fleet.id === fleetId);
 const getStarById = (state, starId) => state.stars.find(star => star.id === starId);
@@ -176,15 +177,17 @@ const resolveResearch = (state, order) => {
         return;
     }
     const fields = state.rules?.technologyFields || [];
+    const raceModifiers = resolveRaceModifiers(state.race).modifiers;
+    const allocationRules = (allocation, appliedFields) => enforceAllocationRules(allocation, appliedFields, raceModifiers);
     const allocation = order.payload?.allocation;
     const fieldId = order.payload?.fieldId;
     const share = order.payload?.share;
     if (allocation && typeof allocation === "object") {
-        techState.allocation = normalizeAllocation(allocation, fields);
+        techState.allocation = normalizeAllocation(allocation, fields, allocationRules);
         return;
     }
     if (fieldId && Number.isFinite(share)) {
-        techState.allocation = adjustAllocationForField(techState.allocation, fields, fieldId, share);
+        techState.allocation = adjustAllocationForField(techState.allocation, fields, fieldId, share, allocationRules);
         return;
     }
     logOrderError(state, "Invalid RESEARCH order payload.");

@@ -18,6 +18,7 @@ import {
     normalizeAllocation,
     resolveResearchForEmpire
 } from "./technologyResolver.js";
+import { enforceAllocationRules, resolveRaceModifiers } from "./raceTraits.js";
 import { buildShipDesign } from "./shipDesign.js";
 import { ORDER_TYPES } from "../models/orders.js";
 
@@ -75,7 +76,14 @@ export const Game = {
         grav: '0.3g - 4.2g',
         temp: '-80° - 140°',
         growth: '+17%',
-        mining: 'Adaptive'
+        mining: 'Adaptive',
+        primaryTrait: "adaptive_biology",
+        lesserTraits: ["rapid_breeding", "starwrights"],
+        tolerance: {
+            grav: { center: 50, width: 35, immune: false },
+            temp: { center: 55, width: 40, immune: false },
+            rad: { center: 45, width: 30, immune: false }
+        }
     }),
     diplomacy: {
         status: {
@@ -239,12 +247,14 @@ export const Game = {
         const scoutBuild = buildShipDesign({
             name: "Probe v1",
             hull: scoutHull,
-            componentIds: ["ion_drive", "laser_array", "scanner_array"]
+            componentIds: ["ion_drive", "laser_array", "scanner_array"],
+            race: this.race
         });
         const colonyBuild = buildShipDesign({
             name: "Colony Ark",
             hull: frigateHull,
-            componentIds: ["ion_drive", "laser_array", "colony_pod", "reactor_core"]
+            componentIds: ["ion_drive", "laser_array", "colony_pod", "reactor_core"],
+            race: this.race
         });
         [scoutBuild, colonyBuild].forEach(result => {
             if (result.design) {
@@ -646,8 +656,9 @@ export const Game = {
         if (!techState) {
             return;
         }
-        const totalRP = calculateEmpireResearchPoints(this, 1);
-        resolveResearchForEmpire(techState, totalRP, this.rules);
+        const raceModifiers = resolveRaceModifiers(this.race).modifiers;
+        const totalRP = calculateEmpireResearchPoints(this, 1, raceModifiers);
+        resolveResearchForEmpire(techState, totalRP, this.rules, raceModifiers);
         this.addEvent("Research resolved.");
     },
 
@@ -733,7 +744,7 @@ export const Game = {
     saveDesign: function({ name, hullId, componentIds }) {
         const hull = (this.rules?.hulls || []).find(entry => entry.id === hullId);
         const designName = name || `Design-${this.roll(99)}`;
-        const result = buildShipDesign({ name: designName, hull, componentIds });
+        const result = buildShipDesign({ name: designName, hull, componentIds, race: this.race });
         if (!result.design) {
             return { success: false, errors: result.errors };
         }
@@ -1085,10 +1096,11 @@ export const Game = {
         if (!field) {
             return null;
         }
+        const raceModifiers = resolveRaceModifiers(this.race).modifiers;
         return {
             level: field.level,
             storedRP: field.storedRP,
-            rpToNextLevel: getRpToNextLevel(field.level, this.rules)
+            rpToNextLevel: getRpToNextLevel(field.level, this.rules, raceModifiers)
         };
     },
 
@@ -1102,7 +1114,9 @@ export const Game = {
         if (!techState) {
             return;
         }
-        techState.allocation = normalizeAllocation(allocation, this.getTechnologyFields());
+        const raceModifiers = resolveRaceModifiers(this.race).modifiers;
+        const allocationRules = (nextAllocation, fields) => enforceAllocationRules(nextAllocation, fields, raceModifiers);
+        techState.allocation = normalizeAllocation(allocation, this.getTechnologyFields(), allocationRules);
     },
 
     setResearchAllocationForField: function(fieldId, share, empireId = 1) {
@@ -1110,10 +1124,13 @@ export const Game = {
         if (!techState) {
             return;
         }
-        techState.allocation = adjustAllocationForField(techState.allocation, this.getTechnologyFields(), fieldId, share);
+        const raceModifiers = resolveRaceModifiers(this.race).modifiers;
+        const allocationRules = (nextAllocation, fields) => enforceAllocationRules(nextAllocation, fields, raceModifiers);
+        techState.allocation = adjustAllocationForField(techState.allocation, this.getTechnologyFields(), fieldId, share, allocationRules);
     },
 
     getEmpireResearchPoints: function(empireId = 1) {
-        return calculateEmpireResearchPoints(this, empireId);
+        const raceModifiers = resolveRaceModifiers(this.race).modifiers;
+        return calculateEmpireResearchPoints(this, empireId, raceModifiers);
     }
 };

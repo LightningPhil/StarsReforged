@@ -6,8 +6,14 @@ class Star {
         this.name = name;
         this.owner = owner;
         this.pop = 0;
-        const roll = () => (rng ? rng.nextInt(100) : 0);
+        const roll = (max = 100) => (rng ? rng.nextInt(max) : 0);
+        const envRoll = (max = 100) => (rng ? rng.nextInt(max) : Math.floor(max / 2));
         this.mins = { i: roll(), b: roll(), g: roll() };
+        this.environment = {
+            grav: envRoll(100),
+            temp: envRoll(100),
+            rad: envRoll(100)
+        };
         this.def = { mines: 0, facts: 0, base: null };
         this.queue = null;
         this.visible = false;
@@ -24,6 +30,7 @@ class Star {
             owner: this.owner,
             pop: this.pop,
             mins: { ...this.mins },
+            environment: { ...this.environment },
             def: { ...this.def },
             hasStargate: this.hasStargate,
             stargateMassLimit: this.stargateMassLimit,
@@ -117,13 +124,30 @@ class Message {
 }
 
 class Race {
-    constructor({ name, type, grav, temp, growth, mining }) {
+    constructor({
+        name,
+        type,
+        grav,
+        temp,
+        growth,
+        mining,
+        primaryTrait = null,
+        lesserTraits = [],
+        tolerance = {}
+    }) {
         this.name = name;
         this.type = type;
         this.grav = grav;
         this.temp = temp;
         this.growth = growth;
         this.mining = mining;
+        this.primaryTrait = primaryTrait;
+        this.lesserTraits = Array.isArray(lesserTraits) ? lesserTraits : [];
+        this.tolerance = {
+            grav: { center: 50, width: 25, immune: false, ...(tolerance?.grav || {}) },
+            temp: { center: 50, width: 25, immune: false, ...(tolerance?.temp || {}) },
+            rad: { center: 50, width: 25, immune: false, ...(tolerance?.rad || {}) }
+        };
     }
 }
 
