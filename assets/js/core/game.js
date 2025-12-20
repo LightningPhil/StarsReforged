@@ -244,17 +244,20 @@ export const Game = {
         });
         const scoutHull = hulls.find(hull => hull.id === "scout") || hulls[0];
         const frigateHull = hulls.find(hull => hull.id === "frigate") || hulls[1] || scoutHull;
+        const techState = getTechnologyStateForEmpire(this, 1);
         const scoutBuild = buildShipDesign({
             name: "Probe v1",
             hull: scoutHull,
             componentIds: ["ion_drive", "laser_array", "scanner_array"],
-            race: this.race
+            race: this.race,
+            techState
         });
         const colonyBuild = buildShipDesign({
             name: "Colony Ark",
             hull: frigateHull,
             componentIds: ["ion_drive", "laser_array", "colony_pod", "reactor_core"],
-            race: this.race
+            race: this.race,
+            techState
         });
         [scoutBuild, colonyBuild].forEach(result => {
             if (result.design) {
@@ -750,7 +753,8 @@ export const Game = {
     saveDesign: function({ name, hullId, componentIds }) {
         const hull = (this.rules?.hulls || []).find(entry => entry.id === hullId);
         const designName = name || `Design-${this.roll(99)}`;
-        const result = buildShipDesign({ name: designName, hull, componentIds, race: this.race });
+        const techState = getTechnologyStateForEmpire(this, 1);
+        const result = buildShipDesign({ name: designName, hull, componentIds, race: this.race, techState });
         if (!result.design) {
             return { success: false, errors: result.errors };
         }

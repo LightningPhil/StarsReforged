@@ -9,35 +9,84 @@ const createDesignId = () => {
     return `design-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
 };
 
-const sumEffect = (components, key) => components.reduce((sum, component) => (
-    sum + (component.effects?.[key] || 0)
+const sumStat = (components, key) => components.reduce((sum, component) => (
+    sum + (component.stats?.[key] || 0)
 ), 0);
 
-export const calculateDesignStats = (hull, components) => {
-    const mass = hull.baseMass + components.reduce((sum, component) => sum + component.mass, 0);
-    const armor = hull.armor + sumEffect(components, "armor");
-    const structure = hull.structure + sumEffect(components, "structure");
-    const attack = sumEffect(components, "attack");
-    const defense = sumEffect(components, "defense");
-    const speedBase = sumEffect(components, "speed");
-    const rangeBase = sumEffect(components, "range");
-    const fuelBase = sumEffect(components, "fuel");
-    const powerOutput = components.reduce((sum, component) => sum + (component.powerOutput || 0), 0);
-    const powerUsage = components.reduce((sum, component) => sum + (component.powerUsage || 0), 0);
-    const mineCapacity = sumEffect(components, "mineUnits");
-    const mineLayingCapacity = sumEffect(components, "mineUnits");
-    const mineSweepingStrength = sumEffect(components, "mineSweep");
-    const signature = (hull.signature || Math.ceil(hull.baseMass / 20)) + Math.ceil(mass / 120);
+const getTechLevel = (techState, fieldId) => techState?.fields?.[fieldId]?.level ?? 0;
 
-    const speed = Math.max(1, Math.floor(speedBase - mass / 140));
-    const range = Math.max(1, Math.floor(rangeBase));
-    const fuel = Math.max(40, Math.floor(range * 1.2 + fuelBase));
-    const shields = Math.max(0, Math.floor(defense * 1.5));
+const getRequirementDelta = (requirements, techState) => {
+    const entries = Object.entries(requirements || {});
+    if (!entries.length || !techState) {
+        return 0;
+    }
+    return Math.min(...entries.map(([fieldId, level]) => getTechLevel(techState, fieldId) - level));
+};
 
+const getMiniaturizationDiscount = (requirements, techState) => {
+    const delta = getRequirementDelta(requirements, techState);
+    if (delta <= 0) {
+        return 0;
+    }
+    return Math.min(0.5, delta * 0.04);
+};
+
+const applyMiniaturization = (value, requirements, techState) => {
+    if (!Number.isFinite(value)) {
+        return 0;
+    }
+    const discount = getMiniaturizationDiscount(requirements, techState);
+    return Math.max(0, Math.round(value * (1 - discount)));
+};
+
+const getAdjustedComponent = (component, techState) => ({
+    ...component,
+    adjustedMass: applyMiniaturization(component.mass ?? 0, component.tech, techState),
+    adjustedCost: applyMiniaturization(component.cost ?? 0, component.tech, techState)
+});
+
+const collectFlags = (components) => {
     const flags = new Set();
     components.forEach(component => {
-        (component.effects?.flags || []).forEach(flag => flags.add(flag));
+        (component.flags || []).forEach(flag => flags.add(flag));
+        (component.stats?.flags || []).forEach(flag => flags.add(flag));
     });
+    return Array.from(flags);
+};
+
+export const calculateDesignStats = (hull, components, techState = null) => {
+    const adjustedComponents = components.map(component => getAdjustedComponent(component, techState));
+    const mass = hull.baseMass + adjustedComponents.reduce((sum, component) => sum + component.adjustedMass, 0);
+    const armor = hull.armor + sumStat(components, "armor");
+    const structure = hull.structure + sumStat(components, "structure");
+    const powerOutput = components.reduce((sum, component) => sum + (component.powerOutput || 0), 0);
+    const powerUsage = components.reduce((sum, component) => sum + (component.powerUsage || 0), 0);
+
+    const fuel = Math.max(0, Math.floor((hull.baseFuel || 0) + sumStat(components, "fuel")));
+    const cargo = Math.max(0, Math.floor((hull.baseCargo || 0) + sumStat(components, "cargo")));
+
+    const speedBase = (hull.baseSpeed || 0) + sumStat(components, "speed");
+    const speed = Math.max(1, Math.floor(speedBase - mass / (hull.speedMassFactor || 140)));
+    const rangeBase = (hull.baseRange || 0) + sumStat(components, "range");
+    const range = Math.max(1, Math.floor(rangeBase + fuel / (hull.fuelRangeFactor || 12)));
+
+    const initiativeBase = (hull.baseInitiative || 0) + sumStat(components, "initiative");
+    const initiative = Math.max(0, Math.floor(initiativeBase + Math.floor(speed / 2)));
+
+    const attack = Math.max(0, Math.floor((hull.baseAttack || 0)
+        + sumStat(components, "attack")
+        + sumStat(components, "targeting")));
+    const defense = Math.max(0, Math.floor((hull.baseDefense || 0)
+        + sumStat(components, "defense")
+        + sumStat(components, "evasion")));
+    const shields = Math.max(0, Math.floor((hull.baseShields || 0) + sumStat(components, "shields") + defense * 0.5));
+
+    const mineCapacity = sumStat(components, "mineCapacity");
+    const mineLayingCapacity = sumStat(components, "mineLayingCapacity") || mineCapacity;
+    const mineSweepingStrength = sumStat(components, "mineSweep");
+    const signature = (hull.signature || Math.ceil(hull.baseMass / 20)) + Math.ceil(mass / 120);
+
+    const baseCost = hull.cost + adjustedComponents.reduce((sum, component) => sum + component.adjustedCost, 0);
 
     return {
         mass,
@@ -48,6 +97,7 @@ export const calculateDesignStats = (hull, components) => {
         defense,
         range,
         fuel,
+        cargo,
         shields,
         powerOutput,
         powerUsage,
@@ -56,52 +106,84 @@ export const calculateDesignStats = (hull, components) => {
         mineLayingCapacity,
         mineSweepingStrength,
         mineHitpoints: armor + structure,
-        initiative: speed + Math.floor(sumEffect(components, "initiative")),
-        flags: Array.from(flags)
+        initiative,
+        flags: collectFlags(components),
+        baseCost
     };
 };
 
-export const validateDesign = (hull, components) => {
+const validateSlotLayout = (hull, components) => {
     const errors = [];
-    if (!hull) {
-        errors.push("Select a hull to continue.");
-        return { valid: false, errors, stats: null };
-    }
-    const slotCounts = components.reduce((acc, component) => {
+    const slotLayout = hull.slotLayout || {};
+    const counts = Object.fromEntries(Object.keys(slotLayout).map(key => [key, 0]));
+    components.forEach(component => {
         if (!component) {
-            acc.invalid = true;
-            return acc;
+            errors.push("All slots must be filled.");
+            return;
         }
-        acc[component.slotType] = (acc[component.slotType] || 0) + 1;
-        return acc;
-    }, { invalid: false });
+        if (!slotLayout[component.slotType]) {
+            errors.push(`Component ${component.name} does not fit a ${component.slotType} slot.`);
+            return;
+        }
+        counts[component.slotType] += 1;
+        if (counts[component.slotType] > slotLayout[component.slotType]) {
+            errors.push(`Too many ${component.slotType} components selected.`);
+        }
+    });
 
-    if (slotCounts.invalid) {
-        errors.push("All slots must be filled.");
-    }
-
-    Object.entries(hull.slotLayout || {}).forEach(([slotType, count]) => {
-        if ((slotCounts[slotType] || 0) !== count) {
+    Object.entries(slotLayout).forEach(([slotType, count]) => {
+        if ((counts[slotType] || 0) !== count) {
             errors.push(`Requires ${count} ${slotType} slot${count > 1 ? "s" : ""}.`);
         }
     });
-    const totalSlots = Object.values(hull.slotLayout || {}).reduce((sum, count) => sum + count, 0);
+
+    const totalSlots = Object.values(slotLayout).reduce((sum, count) => sum + count, 0);
     if (components.length !== totalSlots) {
         errors.push("All required slots must be filled.");
     }
 
-    const stats = calculateDesignStats(hull, components);
-    if (stats.mass > hull.maxMass) {
-        errors.push(`Mass ${stats.mass} exceeds hull limit ${hull.maxMass}.`);
-    }
-    if (stats.powerOutput < stats.powerUsage) {
-        errors.push("Insufficient power output.");
-    }
-
-    return { valid: errors.length === 0, errors, stats };
+    return errors;
 };
 
-const validateRaceAvailability = (hull, components, raceModifiers) => {
+const getMissingTech = (requirements, techState) => {
+    if (!techState) {
+        return [];
+    }
+    return Object.entries(requirements || {}).reduce((missing, [fieldId, level]) => {
+        const current = getTechLevel(techState, fieldId);
+        if (current < level) {
+            missing.push({ fieldId, level, current });
+        }
+        return missing;
+    }, []);
+};
+
+const validateTechAvailability = (hull, components, techState) => {
+    const errors = [];
+    if (!techState) {
+        return errors;
+    }
+    const hullMissing = getMissingTech(hull.tech, techState);
+    hullMissing.forEach(({ fieldId, level, current }) => {
+        errors.push(`Hull requires ${fieldId} ${level} (current ${current}).`);
+    });
+
+    components.forEach(component => {
+        const missing = getMissingTech(component.tech, techState);
+        missing.forEach(({ fieldId, level, current }) => {
+            errors.push(`${component.name} requires ${fieldId} ${level} (current ${current}).`);
+        });
+    });
+
+    return errors;
+};
+
+const getRaceTraits = (race) => new Set([
+    race?.primaryTrait,
+    ...(race?.lesserTraits || [])
+].filter(Boolean));
+
+const validateRaceAvailability = (hull, components, raceModifiers, race) => {
     const errors = [];
     if (!raceModifiers) {
         return errors;
@@ -116,22 +198,54 @@ const validateRaceAvailability = (hull, components, raceModifiers) => {
             errors.push(`Component ${restrictedId} is unavailable for this race.`);
         }
     });
+
+    const traitSet = getRaceTraits(race);
+    if (hull.requiresTraits?.length && !hull.requiresTraits.every(trait => traitSet.has(trait))) {
+        errors.push(`Hull ${hull.name} requires trait ${hull.requiresTraits.join(", ")}.`);
+    }
+    components.forEach(component => {
+        if (component.requiresTraits?.length && !component.requiresTraits.every(trait => traitSet.has(trait))) {
+            errors.push(`${component.name} requires trait ${component.requiresTraits.join(", ")}.`);
+        }
+    });
+
     return errors;
 };
 
-export const buildShipDesign = ({ name, hull, componentIds = [], designId, race = null }) => {
+export const validateDesign = (hull, components, techState = null, race = null) => {
+    const errors = [];
+    if (!hull) {
+        errors.push("Select a hull to continue.");
+        return { valid: false, errors, stats: null };
+    }
+
+    errors.push(...validateSlotLayout(hull, components));
+    errors.push(...validateTechAvailability(hull, components, techState));
+
+    const stats = calculateDesignStats(hull, components, techState);
+    if (stats.mass > hull.maxMass) {
+        errors.push(`Mass ${stats.mass} exceeds hull limit ${hull.maxMass}.`);
+    }
+    if (stats.powerOutput < stats.powerUsage) {
+        errors.push("Insufficient power output.");
+    }
+
+    const { modifiers, errors: raceErrors } = resolveRaceModifiers(race);
+    errors.push(...raceErrors);
+    errors.push(...validateRaceAvailability(hull, components, modifiers, race));
+
+    return { valid: errors.length === 0, errors, stats };
+};
+
+export const buildShipDesign = ({ name, hull, componentIds = [], designId, race = null, techState = null }) => {
     const components = componentIds.map(id => getComponentById(id)).filter(Boolean);
-    const validation = validateDesign(hull, components);
+    const validation = validateDesign(hull, components, techState, race);
     if (!validation.valid) {
         return { design: null, errors: validation.errors, stats: validation.stats };
     }
-    const { modifiers, errors: raceErrors } = resolveRaceModifiers(race);
-    const availabilityErrors = validateRaceAvailability(hull, components, modifiers);
-    const combinedErrors = [...raceErrors, ...availabilityErrors];
-    if (combinedErrors.length) {
-        return { design: null, errors: combinedErrors, stats: validation.stats };
-    }
-    const baseCost = hull.cost + components.reduce((sum, component) => sum + component.cost, 0);
+
+    const { modifiers } = resolveRaceModifiers(race);
+    const baseCost = validation.stats?.baseCost ?? hull.cost + components.reduce((sum, component) => sum + component.cost, 0);
     const cost = Math.ceil(baseCost * (modifiers.shipCostMultiplier || 1));
     const finalStats = validation.stats;
     const design = new ShipDesign({
