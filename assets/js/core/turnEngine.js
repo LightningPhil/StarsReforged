@@ -18,6 +18,8 @@ import {
 } from "./technologyResolver.js";
 import { resolvePlanetEconomy } from "./planetEconomyResolver.js";
 import { resolveRaceModifiers } from "./raceTraits.js";
+import { resolveMassDriverPackets } from "./massDriverResolver.js";
+import { resolveWormholes } from "./wormholeResolver.js";
 
 const cloneStar = (star) => {
     const clone = new Star({ id: star.id, x: star.x, y: star.y, name: star.name, owner: star.owner });
@@ -50,10 +52,14 @@ const cloneFleet = (fleet) => {
         x: fleet.x,
         y: fleet.y,
         name: fleet.name,
-        design: fleet.design
+        design: fleet.design,
+        waypoints: fleet.waypoints,
+        cargo: fleet.cargo,
+        shipStacks: fleet.shipStacks
     });
     clone.fuel = fleet.fuel;
     clone.dest = fleet.dest ? { ...fleet.dest } : null;
+    clone.cargoCapacity = fleet.cargoCapacity ?? clone.cargoCapacity;
     clone.hp = fleet.hp;
     clone.armor = fleet.armor;
     clone.structure = fleet.structure;
@@ -70,6 +76,12 @@ const cloneFleet = (fleet) => {
 const clonePacket = (packet) => new ResourcePacket({ ...packet });
 const cloneMinefield = (minefield) => new Minefield({ ...minefield });
 const cloneMessage = (message) => new Message({ ...message });
+const cloneWormhole = (wormhole) => ({
+    ...wormhole,
+    entry: wormhole.entry ? { ...wormhole.entry } : null,
+    exit: wormhole.exit ? { ...wormhole.exit } : null,
+    endpoints: wormhole.endpoints ? wormhole.endpoints.map(endpoint => ({ ...endpoint })) : null
+});
 const cloneTechnology = (technology) => {
     if (!technology) {
         return null;
@@ -127,10 +139,12 @@ const cloneGameState = (state) => ({
     combatReports: state.combatReports ? state.combatReports.slice() : [],
     turnHistory: state.turnHistory ? state.turnHistory.slice() : [],
     turnEvents: state.turnEvents ? state.turnEvents.slice() : [],
+    wormholes: state.wormholes ? state.wormholes.map(cloneWormhole) : [],
     movementPaths: [],
     minefieldLayingOrders: [],
     minefieldSweepOrders: [],
     stargateOrders: [],
+    waypointTaskQueue: [],
     orderErrors: []
 });
 
@@ -149,14 +163,36 @@ const stepToward = (entity, destX, destY, speed) => {
     };
 };
 
-const getFleetSpeed = (state, fleet) => {
+const getWarpSpeed = (state, fleet) => {
     const modifiers = getTechnologyModifiers(getTechnologyStateForEmpire(state, fleet.owner));
-    return Math.max(15, Math.floor(fleet.design.speed * 12 * modifiers.shipSpeed));
+    return Math.max(1, Math.floor(fleet.design.speed * modifiers.shipSpeed));
+};
+
+const getFleetSpeed = (state, fleet) => {
+    const warpSpeed = getWarpSpeed(state, fleet);
+    return Math.max(10, Math.floor((warpSpeed ** 2) * 10));
 };
 
 const getFleetScanRange = (state, fleet) => {
     const modifiers = getTechnologyModifiers(getTechnologyStateForEmpire(state, fleet.owner));
     return Math.floor(fleet.design.range * modifiers.shipRange);
+};
+
+const calculateFuelUsage = (fleet, warpSpeed, distance) => {
+    if (distance <= 0) {
+        return 0;
+    }
+    const massFactor = Math.max(1, Math.ceil(fleet.mass / 100));
+    const fuelPerLy = Math.max(1, Math.ceil((warpSpeed * massFactor) / 2));
+    return Math.ceil((distance / 10) * fuelPerLy);
+};
+
+const applyRamscoop = (fleet, distance, fuelUse) => {
+    if (!fleet.design?.flags?.includes("ramscoop")) {
+        return fuelUse;
+    }
+    const recovered = Math.floor(distance / 40);
+    return Math.max(0, fuelUse - recovered);
 };
 
 const resolveMovement = (state) => {
@@ -165,17 +201,23 @@ const resolveMovement = (state) => {
         .slice()
         .sort((a, b) => a.id - b.id)
         .forEach(fleet => {
+            if (!fleet.dest && fleet.waypoints?.length) {
+                const waypoint = fleet.waypoints[0];
+                fleet.dest = { x: waypoint.x, y: waypoint.y };
+            }
             if (!fleet.dest) {
                 return;
             }
             const speed = getFleetSpeed(state, fleet);
-            const fuelUse = Math.max(1, Math.floor(speed / 60));
+            const warpSpeed = getWarpSpeed(state, fleet);
             if (fleet.fuel <= 0) {
                 fleet.dest = null;
                 state.orderErrors.push(`${fleet.name} lacked fuel and could not move.`);
                 return;
             }
             const move = stepToward(fleet, fleet.dest.x, fleet.dest.y, speed);
+            const distance = Math.hypot(move.x - fleet.x, move.y - fleet.y);
+            const fuelUse = applyRamscoop(fleet, distance, calculateFuelUsage(fleet, warpSpeed, distance));
             nextPositions.set(fleet.id, { ...move, fuelUse, start: { x: fleet.x, y: fleet.y } });
         });
 
@@ -189,12 +231,121 @@ const resolveMovement = (state) => {
         fleet.x = move.x;
         fleet.y = move.y;
         if (move.arrived) {
-            fleet.dest = null;
+            if (fleet.waypoints?.length) {
+                const waypoint = fleet.waypoints.shift();
+                if (waypoint?.task) {
+                    state.waypointTaskQueue.push({ fleetId: fleet.id, waypoint });
+                }
+                if (fleet.waypoints.length) {
+                    const nextWaypoint = fleet.waypoints[0];
+                    fleet.dest = { x: nextWaypoint.x, y: nextWaypoint.y };
+                } else {
+                    fleet.dest = null;
+                }
+            } else {
+                fleet.dest = null;
+            }
             fleet.fuel = Math.max(0, fleet.fuel - move.fuelUse * 2);
         } else {
             fleet.fuel = Math.max(0, fleet.fuel - move.fuelUse);
         }
     });
+};
+
+const resolveWaypointTasks = (state) => {
+    const queue = state.waypointTaskQueue || [];
+    if (!queue.length) {
+        return;
+    }
+    const removeFleetIds = new Set();
+    queue.forEach(entry => {
+        const fleet = state.fleets.find(item => item.id === entry.fleetId);
+        if (!fleet || removeFleetIds.has(fleet.id)) {
+            return;
+        }
+        const waypoint = entry.waypoint;
+        const star = state.stars.find(candidate => dist(candidate, fleet) < 12);
+        switch (waypoint.task) {
+            case "TRANSPORT": {
+                if (star && star.owner === fleet.owner) {
+                    const economy = state.economy?.[fleet.owner];
+                    if (economy && fleet.cargo) {
+                        economy.mineralStock.i += fleet.cargo.i || 0;
+                        economy.mineralStock.b += fleet.cargo.b || 0;
+                        economy.mineralStock.g += fleet.cargo.g || 0;
+                        economy.minerals = economy.mineralStock.i + economy.mineralStock.b + economy.mineralStock.g;
+                        if (fleet.cargo.pop) {
+                            star.pop += fleet.cargo.pop;
+                        }
+                        fleet.cargo = { i: 0, b: 0, g: 0, pop: 0 };
+                    }
+                }
+                break;
+            }
+            case "COLONIZE": {
+                if (star && !star.owner && fleet.design?.flags?.includes("colonize")) {
+                    fleet.colonize = true;
+                }
+                break;
+            }
+            case "REMOTE_MINE": {
+                if (star && state.turnEvents) {
+                    state.turnEvents.push({
+                        type: "REMOTE_MINE",
+                        fleetId: fleet.id,
+                        starId: star.id
+                    });
+                }
+                break;
+            }
+            case "LAY_MINES": {
+                if (fleet.mineLayingCapacity > 0 && fleet.mineUnits > 0) {
+                    const mineUnitsToDeploy = Math.min(
+                        fleet.mineUnits,
+                        Math.max(1, Math.floor(waypoint.data?.mineUnitsToDeploy || fleet.mineLayingCapacity))
+                    );
+                    if (!state.minefieldLayingOrders) {
+                        state.minefieldLayingOrders = [];
+                    }
+                    state.minefieldLayingOrders.push({
+                        fleetId: fleet.id,
+                        mineUnitsToDeploy,
+                        type: waypoint.data?.type || "standard"
+                    });
+                }
+                break;
+            }
+            case "PATROL": {
+                if (state.turnEvents) {
+                    state.turnEvents.push({
+                        type: "PATROL_COMPLETE",
+                        fleetId: fleet.id,
+                        x: fleet.x,
+                        y: fleet.y
+                    });
+                }
+                break;
+            }
+            case "SCRAP": {
+                if (star && star.owner === fleet.owner) {
+                    removeFleetIds.add(fleet.id);
+                    if (state.turnEvents) {
+                        state.turnEvents.push({
+                            type: "FLEET_SCRAPPED",
+                            fleetId: fleet.id,
+                            starId: star.id
+                        });
+                    }
+                }
+                break;
+            }
+            default:
+                break;
+        }
+    });
+    if (removeFleetIds.size) {
+        state.fleets = state.fleets.filter(fleet => !removeFleetIds.has(fleet.id));
+    }
 };
 
 const resolveCombat = (state) => {
@@ -340,6 +491,9 @@ export const TurnEngine = {
         OrderResolver.resolveOrders(state, lockedOrders);
 
         resolveMovement(state);
+        resolveWaypointTasks(state);
+        resolveWormholes(state);
+        resolveMassDriverPackets(state);
         resolveMinefieldLaying(state);
         resolveMinefieldSweeping(state);
         resolveMinefieldTransitDamage(state);

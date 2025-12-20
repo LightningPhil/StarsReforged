@@ -1,4 +1,4 @@
-import { ORDER_TYPES } from "../models/orders.js";
+import { ORDER_TYPES, WAYPOINT_TASKS } from "../models/orders.js";
 import {
     adjustAllocationForField,
     getTechnologyModifiers,
@@ -30,6 +30,38 @@ const resolveMoveFleet = (state, order) => {
         return;
     }
     fleet.dest = { x: dest.x, y: dest.y };
+};
+
+const resolveSetWaypoints = (state, order) => {
+    const fleet = getFleetById(state, order.payload?.fleetId);
+    if (!fleet || fleet.owner !== order.issuerId) {
+        logOrderError(state, `Invalid SET_WAYPOINTS order from ${order.issuerId}.`);
+        return;
+    }
+    const waypoints = Array.isArray(order.payload?.waypoints) ? order.payload.waypoints : null;
+    if (!waypoints) {
+        logOrderError(state, `Invalid SET_WAYPOINTS payload for fleet ${fleet.id}.`);
+        return;
+    }
+    const allowedTasks = new Set(Object.values(WAYPOINT_TASKS));
+    const normalized = waypoints
+        .map(point => ({
+            x: point?.x,
+            y: point?.y,
+            task: point?.task ?? null,
+            data: point?.data ?? null
+        }))
+        .filter(point => Number.isFinite(point.x) && Number.isFinite(point.y))
+        .map(point => ({
+            ...point,
+            task: point.task && allowedTasks.has(point.task) ? point.task : null
+        }));
+    if (!normalized.length) {
+        logOrderError(state, `SET_WAYPOINTS requires at least one waypoint for fleet ${fleet.id}.`);
+        return;
+    }
+    fleet.waypoints = normalized;
+    fleet.dest = { x: normalized[0].x, y: normalized[0].y };
 };
 
 const resolveColonize = (state, order) => {
@@ -165,12 +197,17 @@ const resolveStargateJump = (state, order) => {
     const dx = destination.x - source.x;
     const dy = destination.y - source.y;
     const distance = Math.hypot(dx, dy);
-    if (distance > source.stargateRange) {
+    const maxRange = Math.min(source.stargateRange || 0, destination.stargateRange || 0);
+    if (distance > maxRange) {
         logOrderError(state, `Destination out of range for fleet ${fleet.id}.`);
         return;
     }
     if (!Number.isFinite(source.stargateMassLimit) || source.stargateMassLimit <= 0) {
         logOrderError(state, `Stargate mass limit unavailable for fleet ${fleet.id}.`);
+        return;
+    }
+    if (!Number.isFinite(destination.stargateMassLimit) || destination.stargateMassLimit <= 0) {
+        logOrderError(state, `Destination stargate mass limit unavailable for fleet ${fleet.id}.`);
         return;
     }
     if (Math.hypot(fleet.x - source.x, fleet.y - source.y) > 12) {
@@ -215,6 +252,9 @@ export const OrderResolver = {
             switch (order.type) {
                 case ORDER_TYPES.MOVE_FLEET:
                     resolveMoveFleet(state, order);
+                    break;
+                case ORDER_TYPES.SET_WAYPOINTS:
+                    resolveSetWaypoints(state, order);
                     break;
                 case ORDER_TYPES.COLONIZE:
                     resolveColonize(state, order);

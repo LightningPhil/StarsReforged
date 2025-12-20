@@ -89,7 +89,7 @@ class ShipDesign {
 }
 
 class Fleet {
-    constructor({ id, owner, x, y, name, design }) {
+    constructor({ id, owner, x, y, name, design, waypoints = null, cargo = null, shipStacks = null }) {
         this.id = id;
         this.owner = owner;
         this.x = x;
@@ -99,6 +99,12 @@ class Fleet {
         this.designId = design.designId;
         this.fuel = design.fuel;
         this.dest = null;
+        this.waypoints = Array.isArray(waypoints) ? waypoints.map(point => ({ ...point })) : [];
+        this.cargoCapacity = design.cargo || 0;
+        this.cargo = cargo ? { ...cargo } : { i: 0, b: 0, g: 0, pop: 0 };
+        this.shipStacks = Array.isArray(shipStacks) && shipStacks.length
+            ? shipStacks.map(stack => ({ ...stack }))
+            : [{ designId: this.designId, count: 1 }];
         this.armor = design.armor;
         this.structure = design.structure;
         this.shields = design.shields;
@@ -120,7 +126,7 @@ class Fleet {
 }
 
 class ResourcePacket {
-    constructor({ id, x, y, destX, destY, payload, destId, owner }) {
+    constructor({ id, x, y, destX, destY, payload, destId, owner, type = "resource", speed = null, decayRate = null, catchRadius = null, damageMultiplier = null }) {
         this.id = id;
         this.x = x;
         this.y = y;
@@ -129,6 +135,11 @@ class ResourcePacket {
         this.payload = payload;
         this.destId = destId;
         this.owner = owner;
+        this.type = type;
+        this.speed = speed;
+        this.decayRate = decayRate;
+        this.catchRadius = catchRadius;
+        this.damageMultiplier = damageMultiplier;
     }
 }
 

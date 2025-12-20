@@ -42,6 +42,10 @@ const serializeFleet = (fleet) => ({
     design: fleet.design ? { ...fleet.design, finalStats: { ...fleet.design.finalStats } } : null,
     fuel: fleet.fuel,
     dest: fleet.dest ? { ...fleet.dest } : null,
+    waypoints: fleet.waypoints ? fleet.waypoints.map(point => ({ ...point })) : [],
+    cargo: fleet.cargo ? { ...fleet.cargo } : null,
+    cargoCapacity: fleet.cargoCapacity,
+    shipStacks: fleet.shipStacks ? fleet.shipStacks.map(stack => ({ ...stack })) : [],
     hp: fleet.hp,
     armor: fleet.armor,
     structure: fleet.structure,
@@ -62,7 +66,12 @@ const serializePacket = (packet) => ({
     destX: packet.destX,
     destY: packet.destY,
     payload: packet.payload,
-    destId: packet.destId
+    destId: packet.destId,
+    type: packet.type,
+    speed: packet.speed,
+    decayRate: packet.decayRate,
+    catchRadius: packet.catchRadius,
+    damageMultiplier: packet.damageMultiplier
 });
 
 const serializeMinefield = (minefield) => ({
@@ -129,6 +138,7 @@ export const serializeUniverseState = (gameState) => createUniverseStateDTO({
     fleets: gameState.fleets.map(serializeFleet),
     packets: gameState.packets.map(serializePacket),
     minefields: gameState.minefields.map(serializeMinefield),
+    wormholes: gameState.wormholes ? gameState.wormholes.map(wormhole => ({ ...wormhole })) : [],
     shipDesigns: gameState.shipDesigns ? Object.fromEntries(Object.entries(gameState.shipDesigns).map(([id, designs]) => ([
         id,
         designs.map(design => ({ ...design, finalStats: { ...design.finalStats } }))
