@@ -24,6 +24,8 @@ export const DB = {
             speedMassFactor: 140,
             fuelRangeFactor: 12,
             signature: 4,
+            scanner: 120,
+            camo: 12,
             cost: 50,
             tech: { CONST: 1 },
             slotLayout: { engine: 1, weapon: 1, utility: 1 }
@@ -43,6 +45,8 @@ export const DB = {
             speedMassFactor: 150,
             fuelRangeFactor: 12,
             signature: 6,
+            scanner: 130,
+            camo: 10,
             cost: 140,
             tech: { CONST: 1 },
             slotLayout: { engine: 1, weapon: 1, utility: 2 }
@@ -62,6 +66,8 @@ export const DB = {
             speedMassFactor: 165,
             fuelRangeFactor: 14,
             signature: 8,
+            scanner: 140,
+            camo: 8,
             cost: 280,
             tech: { CONST: 2 },
             slotLayout: { engine: 1, weapon: 2, utility: 2 }
@@ -81,6 +87,8 @@ export const DB = {
             speedMassFactor: 180,
             fuelRangeFactor: 15,
             signature: 10,
+            scanner: 150,
+            camo: 6,
             cost: 520,
             tech: { CONST: 3 },
             slotLayout: { engine: 1, weapon: 3, utility: 2 }
@@ -100,6 +108,8 @@ export const DB = {
             speedMassFactor: 200,
             fuelRangeFactor: 16,
             signature: 14,
+            scanner: 160,
+            camo: 4,
             cost: 980,
             tech: { CONST: 4 },
             slotLayout: { engine: 1, weapon: 4, utility: 3 }
@@ -232,7 +242,7 @@ export const DB = {
                 mass: 10,
                 cost: 40,
                 powerUsage: 3,
-                stats: { range: 80, initiative: 1 },
+                stats: { range: 80, scanner: 80, initiative: 1 },
                 tech: { ELEC: 1 }
             },
             {
@@ -325,7 +335,7 @@ export const DB = {
                 mass: 18,
                 cost: 140,
                 powerUsage: 6,
-                stats: { defense: 18, shields: 26, initiative: 2 },
+                stats: { defense: 18, shields: 26, initiative: 2, camo: 12 },
                 tech: { ENER: 5, ELEC: 4 },
                 requiresTraits: ["psionic_innovators"]
             }

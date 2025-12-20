@@ -86,6 +86,9 @@ class ShipDesign {
         this.powerOutput = finalStats.powerOutput;
         this.powerUsage = finalStats.powerUsage;
         this.signature = finalStats.signature;
+        this.scanner = finalStats.scanner ?? 0;
+        this.camo = finalStats.camo ?? 0;
+        this.cloak = finalStats.cloak ?? 0;
         this.mineCapacity = finalStats.mineCapacity;
         this.mineLayingCapacity = finalStats.mineLayingCapacity;
         this.mineSweepingStrength = finalStats.mineSweepingStrength;
@@ -147,6 +150,7 @@ class Fleet {
         this.mineHitpoints = design.mineHitpoints || (design.armor + design.structure);
         this.mass = design.mass;
         this.hp = this.armor + this.structure + this.shields;
+        this.cloak = design.cloak ?? design.finalStats?.cloak ?? 0;
     }
 
     get speed() {
@@ -154,7 +158,7 @@ class Fleet {
     }
 
     get scan() {
-        return this.design.range;
+        return this.design.scanner ?? this.design.finalStats?.scanner ?? 0;
     }
 }
 

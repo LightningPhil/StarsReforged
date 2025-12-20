@@ -33,6 +33,82 @@ export const bindRenderer = (rendererRef) => {
     renderer = rendererRef;
 };
 
+const getDesignForStack = (game, fleet, stack) => {
+    const designs = game.shipDesigns?.[fleet.owner] || [];
+    if (stack?.designId) {
+        const match = designs.find(design => design.designId === stack.designId);
+        if (match) {
+            return match;
+        }
+    }
+    return fleet.design;
+};
+
+const getFleetScannerStrength = (game, fleet) => {
+    const stacks = fleet.shipStacks || [];
+    if (!stacks.length) {
+        return fleet.design?.scanner ?? fleet.design?.finalStats?.scanner ?? 0;
+    }
+    const sum = stacks.reduce((total, stack) => {
+        const design = getDesignForStack(game, fleet, stack);
+        const scanner = design?.finalStats?.scanner ?? design?.scanner ?? 0;
+        const count = stack?.count || 1;
+        return total + Math.pow(Math.max(0, scanner), 4) * count;
+    }, 0);
+    return sum > 0 ? Math.pow(sum, 0.25) : 0;
+};
+
+const getFleetCloakPercent = (game, fleet) => {
+    const stacks = fleet.shipStacks || [];
+    if (!stacks.length) {
+        return fleet.design?.cloak ?? fleet.design?.finalStats?.cloak ?? 0;
+    }
+    const totals = stacks.reduce((acc, stack) => {
+        const design = getDesignForStack(game, fleet, stack);
+        const cloak = design?.finalStats?.cloak ?? design?.cloak ?? 0;
+        const count = stack?.count || 1;
+        acc.cloak += cloak * count;
+        acc.count += count;
+        return acc;
+    }, { cloak: 0, count: 0 });
+    if (!totals.count) {
+        return 0;
+    }
+    return Math.round(totals.cloak / totals.count);
+};
+
+const getFleetScanRange = (game, fleet) => {
+    const modifiers = getTechnologyModifiers(getTechnologyStateForEmpire(game, fleet.owner));
+    const scannerStrength = getFleetScannerStrength(game, fleet);
+    return Math.floor(scannerStrength * modifiers.shipRange);
+};
+
+const getIntelState = (scanners, target, cloakPercent = 0) => {
+    const effectiveCloak = Math.min(95, Math.max(0, cloakPercent));
+    let bestRatio = null;
+    scanners.forEach(scanner => {
+        const distance = dist(scanner, target);
+        const effectiveRange = scanner.r * (1 - effectiveCloak / 100);
+        if (effectiveRange <= 0 || distance > effectiveRange) {
+            return;
+        }
+        const ratio = distance / effectiveRange;
+        if (bestRatio === null || ratio < bestRatio) {
+            bestRatio = ratio;
+        }
+    });
+    if (bestRatio === null) {
+        return "none";
+    }
+    if (bestRatio <= 0.35) {
+        return "penetrated";
+    }
+    if (bestRatio <= 0.7) {
+        return "scanned";
+    }
+    return "visible";
+};
+
 export const Game = {
     turnCount: 0,
     year: 2400,
@@ -44,8 +120,10 @@ export const Game = {
     fleets: [],
     packets: [],
     minefields: [],
+    wormholes: [],
     shipDesigns: {},
     minefieldIntel: {},
+    wormholeIntel: {},
     messages: [],
     battles: [],
     sectorScans: [],
@@ -145,8 +223,10 @@ export const Game = {
         this.fleets = loadedState.fleets ?? this.fleets;
         this.packets = loadedState.packets ?? this.packets;
         this.minefields = loadedState.minefields ?? this.minefields;
+        this.wormholes = loadedState.wormholes ?? this.wormholes;
         this.shipDesigns = loadedState.shipDesigns ?? this.shipDesigns;
         this.minefieldIntel = loadedState.minefieldIntel ?? this.minefieldIntel;
+        this.wormholeIntel = loadedState.wormholeIntel ?? this.wormholeIntel;
         this.messages = loadedState.messages ?? this.messages;
         this.battles = loadedState.battles ?? this.battles;
         this.sectorScans = loadedState.sectorScans ?? this.sectorScans;
@@ -1041,8 +1121,7 @@ export const Game = {
             .sort((a, b) => a.id - b.id)
             .forEach(fleet => {
             if (fleet.owner === 1) {
-                const modifiers = getTechnologyModifiers(getTechnologyStateForEmpire(this, fleet.owner));
-                const range = Math.floor(fleet.scan * modifiers.shipRange);
+                const range = getFleetScanRange(this, fleet);
                 this.activeScanners.push({ x: fleet.x, y: fleet.y, r: range, owner: 1 });
             }
         });
@@ -1052,37 +1131,83 @@ export const Game = {
             .slice()
             .sort((a, b) => a.id - b.id)
             .forEach(star => {
-            const visible = this.activeScanners.some(scan => dist(scan, star) <= scan.r);
-            if (visible) {
+            const intelState = getIntelState(this.activeScanners, star);
+            star.intelState = intelState;
+            if (intelState !== "none") {
                 star.visible = true;
                 star.known = true;
-                star.updateSnapshot();
+                if (intelState !== "visible") {
+                    star.updateSnapshot();
+                }
             } else if (star.known) {
                 star.visible = false;
             }
+        });
+
+        this.fleets.forEach(fleet => {
+            if (fleet.owner === 1) {
+                fleet.intelState = "penetrated";
+                fleet.cloak = getFleetCloakPercent(this, fleet);
+                return;
+            }
+            const cloak = getFleetCloakPercent(this, fleet);
+            fleet.cloak = cloak;
+            fleet.intelState = getIntelState(this.activeScanners, fleet, cloak);
         });
 
         if (!this.minefieldIntel[1]) {
             this.minefieldIntel[1] = [];
         }
         this.minefields.forEach(minefield => {
-            const visible = this.activeScanners.some(scan => dist(scan, minefield.center) <= scan.r);
-            if (minefield.visibility !== "all" && !visible && minefield.ownerEmpireId !== 1) {
+            let intelState = "none";
+            if (minefield.visibility === "all" || minefield.ownerEmpireId === 1) {
+                intelState = "penetrated";
+            } else {
+                intelState = getIntelState(this.activeScanners, minefield.center);
+            }
+            if (intelState === "none") {
                 return;
             }
             const existing = this.minefieldIntel[1].find(entry => entry.id === minefield.id);
             const payload = {
                 id: minefield.id,
                 center: { ...minefield.center },
-                radius: minefield.radius,
-                estimatedStrength: Math.ceil(minefield.strength),
-                ownerEmpireId: minefield.ownerEmpireId,
+                radius: intelState !== "visible" ? minefield.radius : minefield.radius,
+                estimatedStrength: intelState === "visible" ? null : Math.ceil(minefield.strength),
+                ownerEmpireId: intelState === "penetrated" ? minefield.ownerEmpireId : null,
+                intelState,
                 lastSeenTurn: this.turnCount
             };
             if (existing) {
                 Object.assign(existing, payload);
             } else {
                 this.minefieldIntel[1].push(payload);
+            }
+        });
+
+        if (!this.wormholeIntel[1]) {
+            this.wormholeIntel[1] = [];
+        }
+        this.wormholes.forEach(wormhole => {
+            const intelState = getIntelState(this.activeScanners, wormhole.entry || wormhole);
+            if (intelState === "none") {
+                return;
+            }
+            const existing = this.wormholeIntel[1].find(entry => entry.id === wormhole.id);
+            const payload = {
+                id: wormhole.id ?? null,
+                entry: wormhole.entry ? { ...wormhole.entry } : null,
+                exit: intelState === "penetrated" ? (wormhole.exit ? { ...wormhole.exit } : null) : null,
+                endpoints: intelState === "penetrated" && wormhole.endpoints
+                    ? wormhole.endpoints.map(endpoint => ({ ...endpoint }))
+                    : null,
+                intelState,
+                lastSeenTurn: this.turnCount
+            };
+            if (existing) {
+                Object.assign(existing, payload);
+            } else {
+                this.wormholeIntel[1].push(payload);
             }
         });
     },

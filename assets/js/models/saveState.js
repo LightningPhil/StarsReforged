@@ -37,6 +37,7 @@ export const UNIVERSE_STATE_SCHEMA = {
     turnHistory: [],
     turnEvents: [],
     minefieldIntel: {},
+    wormholeIntel: {},
     empireCache: { taxTotal: 0, industrialOutput: 0 },
     state: "RUNNING",
     winnerEmpireId: null,

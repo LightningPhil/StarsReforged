@@ -50,6 +50,7 @@ const migrateUniverseState = (state) => {
     next.fleets = normalizeArray(next.fleets);
     next.packets = normalizeArray(next.packets);
     next.minefields = normalizeArray(next.minefields);
+    next.wormholes = normalizeArray(next.wormholes);
     next.players = normalizeArray(next.players);
     next.messages = normalizeArray(next.messages);
     next.orders = normalizeArray(next.orders);
@@ -65,6 +66,7 @@ const migrateUniverseState = (state) => {
     next.diplomacy = next.diplomacy || { status: {}, lastWarning: 0 };
     next.mineralStock = next.mineralStock || { i: 0, b: 0, g: 0 };
     next.minefieldIntel = next.minefieldIntel || {};
+    next.wormholeIntel = next.wormholeIntel || {};
     next.empireCache = next.empireCache || { taxTotal: 0, industrialOutput: 0 };
     return { state: next, migrated };
 };
@@ -370,6 +372,7 @@ export const deserializeUniverseState = (state) => {
         wormholes: migratedState.wormholes || [],
         shipDesigns,
         minefieldIntel: migratedState.minefieldIntel || {},
+        wormholeIntel: migratedState.wormholeIntel || {},
         messages,
         orders: migratedState.orders || [],
         logs: migratedState.logs || [],

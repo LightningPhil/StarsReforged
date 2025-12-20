@@ -118,6 +118,15 @@ const cloneGameState = (state) => ({
         id,
         intel.map(record => ({ ...record, center: { ...record.center } }))
     ]))) : {},
+    wormholeIntel: state.wormholeIntel ? Object.fromEntries(Object.entries(state.wormholeIntel).map(([id, intel]) => ([
+        id,
+        intel.map(record => ({
+            ...record,
+            entry: record.entry ? { ...record.entry } : null,
+            exit: record.exit ? { ...record.exit } : null,
+            endpoints: record.endpoints ? record.endpoints.map(endpoint => ({ ...endpoint })) : null
+        }))
+    ]))) : {},
     messages: state.messages.map(cloneMessage),
     battles: state.battles.slice(),
     sectorScans: state.sectorScans.map(scan => ({ ...scan })),
@@ -173,9 +182,81 @@ const getFleetSpeed = (state, fleet) => {
     return Math.max(10, Math.floor((warpSpeed ** 2) * 10));
 };
 
+const getDesignForStack = (state, fleet, stack) => {
+    const designs = state.shipDesigns?.[fleet.owner] || [];
+    if (stack?.designId) {
+        const match = designs.find(design => design.designId === stack.designId);
+        if (match) {
+            return match;
+        }
+    }
+    return fleet.design;
+};
+
+const getFleetScannerStrength = (state, fleet) => {
+    const stacks = fleet.shipStacks || [];
+    if (!stacks.length) {
+        const scanner = fleet.design?.scanner ?? fleet.design?.finalStats?.scanner ?? 0;
+        return Math.max(0, scanner);
+    }
+    const sum = stacks.reduce((total, stack) => {
+        const design = getDesignForStack(state, fleet, stack);
+        const scanner = design?.finalStats?.scanner ?? design?.scanner ?? 0;
+        const count = stack?.count || 1;
+        return total + Math.pow(Math.max(0, scanner), 4) * count;
+    }, 0);
+    return sum > 0 ? Math.pow(sum, 0.25) : 0;
+};
+
+const getFleetCloakPercent = (state, fleet) => {
+    const stacks = fleet.shipStacks || [];
+    if (!stacks.length) {
+        return fleet.design?.cloak ?? fleet.design?.finalStats?.cloak ?? 0;
+    }
+    const totals = stacks.reduce((acc, stack) => {
+        const design = getDesignForStack(state, fleet, stack);
+        const cloak = design?.finalStats?.cloak ?? design?.cloak ?? 0;
+        const count = stack?.count || 1;
+        acc.cloak += cloak * count;
+        acc.count += count;
+        return acc;
+    }, { cloak: 0, count: 0 });
+    if (!totals.count) {
+        return 0;
+    }
+    return Math.round(totals.cloak / totals.count);
+};
+
 const getFleetScanRange = (state, fleet) => {
     const modifiers = getTechnologyModifiers(getTechnologyStateForEmpire(state, fleet.owner));
-    return Math.floor(fleet.design.range * modifiers.shipRange);
+    const scannerStrength = getFleetScannerStrength(state, fleet);
+    return Math.floor(scannerStrength * modifiers.shipRange);
+};
+
+const getIntelState = (scanners, target, cloakPercent = 0) => {
+    const effectiveCloak = Math.min(95, Math.max(0, cloakPercent));
+    let bestRatio = null;
+    scanners.forEach(scanner => {
+        const distance = dist(scanner, target);
+        const effectiveRange = scanner.r * (1 - effectiveCloak / 100);
+        if (effectiveRange <= 0 || distance > effectiveRange) {
+            return;
+        }
+        const ratio = distance / effectiveRange;
+        if (bestRatio === null || ratio < bestRatio) {
+            bestRatio = ratio;
+        }
+    });
+    if (bestRatio === null) {
+        return "none";
+    }
+    if (bestRatio <= 0.35) {
+        return "penetrated";
+    }
+    if (bestRatio <= 0.7) {
+        return "scanned";
+    }
+    return "visible";
 };
 
 const calculateFuelUsage = (fleet, warpSpeed, distance) => {
@@ -416,39 +497,88 @@ const resolveVisibility = (state) => {
         .slice()
         .sort((a, b) => a.id - b.id)
         .forEach(star => {
-            const visible = state.activeScanners.some(scan => dist(scan, star) <= scan.r);
-            if (visible) {
+            const intelState = getIntelState(state.activeScanners, star);
+            star.intelState = intelState;
+            if (intelState !== "none") {
                 star.visible = true;
                 star.known = true;
-                star.updateSnapshot();
+                if (intelState !== "visible") {
+                    star.updateSnapshot();
+                }
             } else if (star.known) {
                 star.visible = false;
             }
         });
 
+    state.fleets.forEach(fleet => {
+        if (fleet.owner === 1) {
+            fleet.intelState = "penetrated";
+            fleet.cloak = getFleetCloakPercent(state, fleet);
+            return;
+        }
+        const cloak = getFleetCloakPercent(state, fleet);
+        fleet.cloak = cloak;
+        fleet.intelState = getIntelState(state.activeScanners, fleet, cloak);
+    });
+
     state.minefields.forEach(minefield => {
-        const visible = state.activeScanners.some(scan => dist(scan, minefield.center) <= scan.r);
-        if (minefield.visibility === "all" || visible || minefield.ownerEmpireId === 1) {
-            const intel = {
-                id: minefield.id,
-                center: { ...minefield.center },
-                radius: minefield.radius,
-                estimatedStrength: Math.ceil(minefield.strength),
-                ownerEmpireId: minefield.ownerEmpireId,
-                lastSeenTurn: state.turnCount
-            };
-            if (!state.minefieldIntel) {
-                state.minefieldIntel = {};
-            }
-            if (!state.minefieldIntel[1]) {
-                state.minefieldIntel[1] = [];
-            }
-            const existing = state.minefieldIntel[1].find(entry => entry.id === minefield.id);
-            if (existing) {
-                Object.assign(existing, intel);
-            } else {
-                state.minefieldIntel[1].push(intel);
-            }
+        let intelState = "none";
+        if (minefield.visibility === "all" || minefield.ownerEmpireId === 1) {
+            intelState = "penetrated";
+        } else {
+            intelState = getIntelState(state.activeScanners, minefield.center);
+        }
+        if (intelState === "none") {
+            return;
+        }
+        const intel = {
+            id: minefield.id,
+            center: { ...minefield.center },
+            radius: intelState !== "visible" ? minefield.radius : minefield.radius,
+            estimatedStrength: intelState === "visible" ? null : Math.ceil(minefield.strength),
+            ownerEmpireId: intelState === "penetrated" ? minefield.ownerEmpireId : null,
+            intelState,
+            lastSeenTurn: state.turnCount
+        };
+        if (!state.minefieldIntel) {
+            state.minefieldIntel = {};
+        }
+        if (!state.minefieldIntel[1]) {
+            state.minefieldIntel[1] = [];
+        }
+        const existing = state.minefieldIntel[1].find(entry => entry.id === minefield.id);
+        if (existing) {
+            Object.assign(existing, intel);
+        } else {
+            state.minefieldIntel[1].push(intel);
+        }
+    });
+
+    state.wormholes = state.wormholes || [];
+    state.wormholeIntel = state.wormholeIntel || {};
+    if (!state.wormholeIntel[1]) {
+        state.wormholeIntel[1] = [];
+    }
+    state.wormholes.forEach(wormhole => {
+        const intelState = getIntelState(state.activeScanners, wormhole.entry || wormhole);
+        if (intelState === "none") {
+            return;
+        }
+        const intel = {
+            id: wormhole.id ?? null,
+            entry: wormhole.entry ? { ...wormhole.entry } : null,
+            exit: intelState === "penetrated" ? (wormhole.exit ? { ...wormhole.exit } : null) : null,
+            endpoints: intelState === "penetrated" && wormhole.endpoints
+                ? wormhole.endpoints.map(endpoint => ({ ...endpoint }))
+                : null,
+            intelState,
+            lastSeenTurn: state.turnCount
+        };
+        const existing = state.wormholeIntel[1].find(entry => entry.id === intel.id);
+        if (existing) {
+            Object.assign(existing, intel);
+        } else {
+            state.wormholeIntel[1].push(intel);
         }
     });
 };
