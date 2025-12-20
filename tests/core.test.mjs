@@ -19,9 +19,9 @@ const rules = JSON.parse(fs.readFileSync(rulesPath, "utf-8"));
 const techFieldsPath = fileURLToPath(new URL("../config/technologyFields.json", import.meta.url));
 const technologyFields = JSON.parse(fs.readFileSync(techFieldsPath, "utf-8")).fields;
 
-const createDesign = (name, hullId, componentIds, race) => {
+const createDesign = (name, hullId, componentIds, race, techState) => {
     const hull = rules.hulls.find(entry => entry.id === hullId);
-    const result = buildShipDesign({ name, hull, componentIds, race });
+    const result = buildShipDesign({ name, hull, componentIds, race, techState });
     return result.design;
 };
 
@@ -48,9 +48,10 @@ const createBaseState = () => {
         primaryTrait: "adaptive_biology",
         lesserTraits: ["rapid_breeding"]
     });
-    const humanDesign = createDesign("Probe", "scout", ["ion_drive", "laser_array", "scanner_array"], race);
-    const aiRaider = createDesign("Raider", "scout", ["ion_drive", "laser_array", "armor_plating"], race);
-    const aiColonizer = createDesign("Seeder", "frigate", ["ion_drive", "laser_array", "colony_pod", "reactor_core"], race);
+    const startingTech = createTechnologyState(technologyFields);
+    const humanDesign = createDesign("Probe", "scout", ["ion_drive", "laser_array", "scanner_array"], race, startingTech);
+    const aiRaider = createDesign("Raider", "scout", ["ion_drive", "laser_array", "armor_plating"], race, startingTech);
+    const aiColonizer = createDesign("Seeder", "frigate", ["ion_drive", "laser_array", "colony_pod", "reactor_core"], race, startingTech);
 
     return {
         turnCount: 0,

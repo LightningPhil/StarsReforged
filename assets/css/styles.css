@@ -267,6 +267,13 @@ select, input[type="text"], input[type="range"] {
     margin-bottom: 6px;
 }
 
+.slot-detail {
+    margin-top: 6px;
+    font-size: 10px;
+    color: #9bd;
+    line-height: 1.3;
+}
+
 .design-errors {
     font-size: 11px;
     margin-top: 10px;

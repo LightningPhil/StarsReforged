@@ -74,6 +74,7 @@ class ShipDesign {
         this.defense = finalStats.defense;
         this.range = finalStats.range;
         this.fuel = finalStats.fuel;
+        this.cargo = finalStats.cargo;
         this.shields = finalStats.shields;
         this.powerOutput = finalStats.powerOutput;
         this.powerUsage = finalStats.powerUsage;

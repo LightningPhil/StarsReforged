@@ -408,6 +408,8 @@ export const UI = {
         if (!grid || !hull) {
             return;
         }
+        const techState = Game.getTechnologyState(1);
+        const raceTraits = new Set([Game.race?.primaryTrait, ...(Game.race?.lesserTraits || [])].filter(Boolean));
         grid.innerHTML = '';
         Object.entries(hull.slotLayout || {}).forEach(([slotType, count]) => {
             for (let i = 0; i < count; i++) {
@@ -415,21 +417,73 @@ export const UI = {
                 slot.className = 'slot-card';
                 const label = document.createElement('div');
                 label.className = 'slot-label';
-                label.textContent = `${slotType.toUpperCase()} SLOT`;
+                label.textContent = `${slotType.toUpperCase()} SLOT ${i + 1}`;
                 const select = document.createElement('select');
                 select.dataset.slotType = slotType;
+                const detail = document.createElement('div');
+                detail.className = 'slot-detail';
+                const components = getComponentsBySlot(slotType);
                 getComponentsBySlot(slotType).forEach(component => {
                     const opt = document.createElement('option');
                     opt.value = component.id;
-                    opt.text = `${component.name} (${component.cost}cr)`;
+                    const missingTech = Object.entries(component.tech || {}).filter(([fieldId, level]) => {
+                        const current = techState?.fields?.[fieldId]?.level ?? 0;
+                        return current < level;
+                    });
+                    const missingTraits = (component.requiresTraits || []).filter(trait => !raceTraits.has(trait));
+                    if (missingTech.length || missingTraits.length) {
+                        opt.disabled = true;
+                    }
+                    const techTag = missingTech.length
+                        ? ` | Req ${missingTech.map(([fieldId, level]) => `${fieldId} ${level}`).join(', ')}`
+                        : '';
+                    const traitTag = missingTraits.length ? ` | Req ${missingTraits.join(', ')}` : '';
+                    opt.text = `${component.name} (${component.cost}cr)${techTag}${traitTag}`;
                     select.add(opt);
                 });
-                select.addEventListener('change', () => this.updateDesignStats());
+                select.addEventListener('change', () => {
+                    this.updateDesignStats();
+                    this.updateSlotDetail(select, detail, components);
+                });
+                if (select.options.length) {
+                    const enabledOption = Array.from(select.options).find(option => !option.disabled);
+                    if (enabledOption) {
+                        select.value = enabledOption.value;
+                    }
+                }
+                this.updateSlotDetail(select, detail, components);
                 slot.appendChild(label);
                 slot.appendChild(select);
+                slot.appendChild(detail);
                 grid.appendChild(slot);
             }
         });
+    },
+
+    updateSlotDetail: function(select, detail, components) {
+        const component = components.find(entry => entry.id === select.value);
+        if (!component || !detail) {
+            return;
+        }
+        const stats = component.stats || {};
+        const parts = [];
+        if (component.mass) {
+            parts.push(`${component.mass}kt`);
+        }
+        if (component.powerUsage) {
+            parts.push(`P-${component.powerUsage}`);
+        }
+        if (component.powerOutput) {
+            parts.push(`P+${component.powerOutput}`);
+        }
+        Object.entries(stats).forEach(([key, value]) => {
+            if (!value) {
+                return;
+            }
+            const label = key === "mineCapacity" ? "MineCap" : key.charAt(0).toUpperCase() + key.slice(1);
+            parts.push(`${label} ${value}`);
+        });
+        detail.textContent = parts.join(' | ');
     },
 
     updateDesignStats: function() {
@@ -438,14 +492,15 @@ export const UI = {
         if (!hull) {
             return;
         }
+        const techState = Game.getTechnologyState(1);
         const selects = Array.from(document.querySelectorAll('#design-slots select'));
         const componentIds = selects.map(select => select.value);
         const components = componentIds.map(id => getComponentById(id)).filter(Boolean);
-        const validation = validateDesign(hull, components);
+        const validation = validateDesign(hull, components, techState, Game.race);
         const stats = validation.stats;
         const errors = validation.errors;
 
-        document.getElementById('sim-cost').innerText = stats ? hull.cost + components.reduce((sum, component) => sum + component.cost, 0) : 0;
+        document.getElementById('sim-cost').innerText = stats?.baseCost ?? 0;
         document.getElementById('sim-mass').innerText = stats?.mass ?? 0;
         document.getElementById('sim-armor').innerText = stats?.armor ?? 0;
         document.getElementById('sim-structure').innerText = stats?.structure ?? 0;
@@ -455,6 +510,9 @@ export const UI = {
         document.getElementById('sim-defense').innerText = stats?.defense ?? 0;
         document.getElementById('sim-power').innerText = stats ? `${stats.powerOutput}/${stats.powerUsage}` : '0/0';
         document.getElementById('sim-mine').innerText = stats?.mineCapacity ?? 0;
+        document.getElementById('sim-fuel').innerText = stats?.fuel ?? 0;
+        document.getElementById('sim-cargo').innerText = stats?.cargo ?? 0;
+        document.getElementById('sim-initiative').innerText = stats?.initiative ?? 0;
 
         const clamp = (value, max = 100) => Math.min(max, Math.max(0, value));
         const speedBar = document.getElementById('sim-speed-bar');

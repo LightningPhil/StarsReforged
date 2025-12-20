@@ -1,6 +1,7 @@
 import { ORDER_TYPES } from "../models/orders.js";
 import { dist } from "../core/utils.js";
 import { buildShipDesign } from "../core/shipDesign.js";
+import { getTechnologyStateForEmpire } from "../core/technologyResolver.js";
 
 const lineIntersectsCircle = (start, end, center, radius) => {
     const dx = end.x - start.x;
@@ -133,17 +134,20 @@ export const AIController = {
         const hulls = gameState.rules?.hulls || [];
         const scoutHull = hulls.find(hull => hull.id === "scout") || hulls[0];
         const frigateHull = hulls.find(hull => hull.id === "frigate") || hulls[1] || scoutHull;
+        const techState = getTechnologyStateForEmpire(gameState, playerId);
         const raider = buildShipDesign({
             name: "Raider",
             hull: scoutHull,
             componentIds: ["ion_drive", "laser_array", "armor_plating"],
-            race: gameState.race
+            race: gameState.race,
+            techState
         });
         const colonizer = buildShipDesign({
             name: "Seeder",
             hull: frigateHull,
             componentIds: ["ion_drive", "laser_array", "colony_pod", "reactor_core"],
-            race: gameState.race
+            race: gameState.race,
+            techState
         });
         [raider, colonizer].forEach(result => {
             if (result.design) {
