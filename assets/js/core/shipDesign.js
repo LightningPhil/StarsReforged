@@ -12,6 +12,9 @@ const createDesignId = () => {
 const sumStat = (components, key) => components.reduce((sum, component) => (
     sum + (component.stats?.[key] || 0)
 ), 0);
+const maxStat = (components, key) => components.reduce((max, component) => (
+    Math.max(max, component.stats?.[key] || 0)
+), 0);
 
 const getTechLevel = (techState, fieldId) => techState?.fields?.[fieldId]?.level ?? 0;
 
@@ -73,8 +76,11 @@ export const calculateDesignStats = (hull, components, techState = null) => {
     const initiativeBase = (hull.baseInitiative || 0) + sumStat(components, "initiative");
     const initiative = Math.max(0, Math.floor(initiativeBase + Math.floor(speed / 2)));
 
+    const beamDamage = Math.max(0, Math.floor(sumStat(components, "beamDamage") + sumStat(components, "attack")));
+    const torpedoDamage = Math.max(0, Math.floor(sumStat(components, "torpedoDamage")));
     const attack = Math.max(0, Math.floor((hull.baseAttack || 0)
-        + sumStat(components, "attack")
+        + beamDamage
+        + torpedoDamage
         + sumStat(components, "targeting")));
     const defense = Math.max(0, Math.floor((hull.baseDefense || 0)
         + sumStat(components, "defense")
@@ -85,6 +91,11 @@ export const calculateDesignStats = (hull, components, techState = null) => {
     const mineLayingCapacity = sumStat(components, "mineLayingCapacity") || mineCapacity;
     const mineSweepingStrength = sumStat(components, "mineSweep");
     const signature = (hull.signature || Math.ceil(hull.baseMass / 20)) + Math.ceil(mass / 120);
+    const beamRange = Math.max(0, maxStat(components, "beamRange"));
+    const torpedoRange = Math.max(0, maxStat(components, "torpedoRange"));
+    const bombing = Math.max(0, Math.floor(sumStat(components, "bombing") + torpedoDamage * 0.2));
+    const gattling = Math.max(0, Math.floor(sumStat(components, "gattling")));
+    const sapper = Math.max(0, Math.min(0.8, sumStat(components, "sapper")));
 
     const baseCost = hull.cost + adjustedComponents.reduce((sum, component) => sum + component.adjustedCost, 0);
 
@@ -107,6 +118,13 @@ export const calculateDesignStats = (hull, components, techState = null) => {
         mineSweepingStrength,
         mineHitpoints: armor + structure,
         initiative,
+        beamDamage,
+        torpedoDamage,
+        beamRange: beamRange || (beamDamage > 0 ? 1 : 0),
+        torpedoRange: torpedoRange || (torpedoDamage > 0 ? 2 : 0),
+        bombing,
+        gattling,
+        sapper,
         flags: collectFlags(components),
         baseCost
     };

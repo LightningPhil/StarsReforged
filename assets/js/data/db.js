@@ -160,7 +160,7 @@ export const DB = {
                 mass: 12,
                 cost: 30,
                 powerUsage: 4,
-                stats: { attack: 18 },
+                stats: { beamDamage: 18, beamRange: 1, gattling: 1 },
                 tech: { WEAP: 1 }
             },
             {
@@ -170,7 +170,7 @@ export const DB = {
                 mass: 18,
                 cost: 55,
                 powerUsage: 5,
-                stats: { attack: 28 },
+                stats: { torpedoDamage: 28, torpedoRange: 2, gattling: 2, bombing: 3 },
                 tech: { WEAP: 2 }
             },
             {
@@ -180,7 +180,7 @@ export const DB = {
                 mass: 24,
                 cost: 90,
                 powerUsage: 7,
-                stats: { attack: 40 },
+                stats: { beamDamage: 40, beamRange: 1, sapper: 0.1 },
                 tech: { WEAP: 3 }
             },
             {
@@ -190,7 +190,7 @@ export const DB = {
                 mass: 36,
                 cost: 160,
                 powerUsage: 10,
-                stats: { attack: 75 },
+                stats: { torpedoDamage: 75, torpedoRange: 3, bombing: 8 },
                 tech: { WEAP: 5 }
             },
             {
@@ -200,7 +200,7 @@ export const DB = {
                 mass: 48,
                 cost: 260,
                 powerUsage: 14,
-                stats: { attack: 110, initiative: -1 },
+                stats: { beamDamage: 110, beamRange: 2, sapper: 0.25, initiative: -1 },
                 tech: { WEAP: 7 }
             }
         ],

@@ -71,6 +71,13 @@ class ShipDesign {
         this.structure = finalStats.structure;
         this.speed = finalStats.speed;
         this.attack = finalStats.attack;
+        this.beamDamage = finalStats.beamDamage ?? finalStats.attack ?? 0;
+        this.torpedoDamage = finalStats.torpedoDamage ?? 0;
+        this.beamRange = finalStats.beamRange ?? (this.beamDamage > 0 ? 1 : 0);
+        this.torpedoRange = finalStats.torpedoRange ?? (this.torpedoDamage > 0 ? 2 : 0);
+        this.bombing = finalStats.bombing ?? 0;
+        this.gattling = finalStats.gattling ?? 0;
+        this.sapper = finalStats.sapper ?? 0;
         this.defense = finalStats.defense;
         this.range = finalStats.range;
         this.fuel = finalStats.fuel;
@@ -105,6 +112,32 @@ class Fleet {
         this.shipStacks = Array.isArray(shipStacks) && shipStacks.length
             ? shipStacks.map(stack => ({ ...stack }))
             : [{ designId: this.designId, count: 1 }];
+        this.shipStacks = this.shipStacks.map(stack => {
+            if (stack.stats) {
+                return stack;
+            }
+            if (stack.designId === this.designId) {
+                return {
+                    ...stack,
+                    stats: {
+                        armor: design.armor,
+                        structure: design.structure,
+                        shields: design.shields,
+                        initiative: design.initiative,
+                        defense: design.defense,
+                        beamDamage: design.beamDamage ?? design.attack ?? 0,
+                        torpedoDamage: design.torpedoDamage ?? 0,
+                        beamRange: design.beamRange ?? (design.attack > 0 ? 1 : 0),
+                        torpedoRange: design.torpedoRange ?? (design.torpedoDamage > 0 ? 2 : 0),
+                        bombing: design.bombing ?? 0,
+                        gattling: design.gattling ?? 0,
+                        sapper: design.sapper ?? 0,
+                        speed: design.speed
+                    }
+                };
+            }
+            return stack;
+        });
         this.armor = design.armor;
         this.structure = design.structure;
         this.shields = design.shields;
