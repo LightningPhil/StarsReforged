@@ -282,11 +282,20 @@ export const deserializeUniverseState = (state) => {
             x: dto.x,
             y: dto.y,
             name: dto.name,
-            design
+            design,
+            waypoints: dto.waypoints,
+            cargo: dto.cargo,
+            shipStacks: dto.shipStacks
         });
         fleet.designId = dto.designId || design.designId;
         fleet.fuel = dto.fuel ?? design.fuel;
         fleet.dest = dto.dest ? { ...dto.dest } : null;
+        fleet.waypoints = Array.isArray(dto.waypoints) ? dto.waypoints.map(point => ({ ...point })) : fleet.waypoints;
+        fleet.cargo = dto.cargo ? { ...dto.cargo } : fleet.cargo;
+        fleet.cargoCapacity = dto.cargoCapacity ?? fleet.cargoCapacity;
+        fleet.shipStacks = Array.isArray(dto.shipStacks) && dto.shipStacks.length
+            ? dto.shipStacks.map(stack => ({ ...stack }))
+            : fleet.shipStacks;
         fleet.hp = dto.hp ?? fleet.hp;
         fleet.armor = dto.armor ?? fleet.armor;
         fleet.structure = dto.structure ?? fleet.structure;
@@ -308,7 +317,12 @@ export const deserializeUniverseState = (state) => {
         destX: dto.destX,
         destY: dto.destY,
         payload: dto.payload,
-        destId: dto.destId
+        destId: dto.destId,
+        type: dto.type,
+        speed: dto.speed,
+        decayRate: dto.decayRate,
+        catchRadius: dto.catchRadius,
+        damageMultiplier: dto.damageMultiplier
     }));
 
     const minefields = migratedState.minefields.map(dto => new Minefield({
@@ -353,6 +367,7 @@ export const deserializeUniverseState = (state) => {
         fleets,
         packets,
         minefields,
+        wormholes: migratedState.wormholes || [],
         shipDesigns,
         minefieldIntel: migratedState.minefieldIntel || {},
         messages,

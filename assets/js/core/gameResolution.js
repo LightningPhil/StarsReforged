@@ -251,7 +251,8 @@ export const resolveStargateJumps = (state) => {
             return;
         }
         const distance = Math.hypot(destination.x - source.x, destination.y - source.y);
-        if (distance > source.stargateRange) {
+        const maxRange = Math.min(source.stargateRange || 0, destination.stargateRange || 0);
+        if (distance > maxRange) {
             return;
         }
         if (Math.hypot(fleet.x - source.x, fleet.y - source.y) > 12) {
@@ -267,8 +268,10 @@ export const resolveStargateJumps = (state) => {
                 destinationPlanetId: destination.id
             });
         }
-        const massLimit = source.stargateMassLimit || 1;
-        const misjumpChance = Math.max(0, (fleet.mass / massLimit) - 1);
+        const massLimit = Math.min(source.stargateMassLimit || 0, destination.stargateMassLimit || 0) || 1;
+        const techDelta = Math.abs((source.stargateTechLevel || 0) - (destination.stargateTechLevel || 0));
+        const safetyPenalty = techDelta * 0.05;
+        const misjumpChance = Math.max(0, (fleet.mass / massLimit) - 1) + safetyPenalty;
         if (misjumpChance > 0) {
             const roll = state.rng.nextInt(1000) / 1000;
             if (roll < misjumpChance) {

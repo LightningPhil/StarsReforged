@@ -27,6 +27,7 @@ export const UNIVERSE_STATE_SCHEMA = {
     fleets: [],
     packets: [],
     minefields: [],
+    wormholes: [],
     shipDesigns: {},
     diplomacy: { status: {}, lastWarning: 0 },
     orders: [],
