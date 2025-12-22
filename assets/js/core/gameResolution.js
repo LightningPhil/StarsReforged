@@ -261,7 +261,7 @@ export const resolveMinefieldTransitDamage = (state) => {
             if (roll >= hitChance) {
                 return;
             }
-            const damage = Math.ceil(minefield.density * lengthInside
+            const damage = Math.ceil(minefield.density * warpSpeed
                 * (typeRules.damageMultiplier || 1)
                 * (raceModifiers.minefieldDamageMultiplier || 1));
             if (damage <= 0) {
