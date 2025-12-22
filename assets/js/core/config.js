@@ -7,7 +7,25 @@ export const DEFAULT_RULES = {
     },
     victory: {
         economicSupremacyThreshold: 0.6,
-        maxTurns: 250
+        planetShareThreshold: 0.6,
+        productionCapacityShareThreshold: 0.6,
+        techMilestoneTotal: 30,
+        scoreThreshold: 2000,
+        capitalShipCountThreshold: 5,
+        capitalShipHullIds: ["battleship"],
+        maxYear: 2600,
+        maxTurns: 250,
+        enabled: {
+            totalAnnihilation: true,
+            economicSupremacy: true,
+            planetShare: true,
+            techMilestones: true,
+            scoreThreshold: true,
+            productionCapacity: true,
+            capitalShips: true,
+            yearLimit: true,
+            turnLimit: true
+        }
     },
     startingResources: {
         human: {
@@ -91,7 +109,11 @@ export const loadConfig = async () => {
             ...DEFAULT_RULES,
             ...rules,
             research: { ...DEFAULT_RULES.research, ...(rules?.research || {}) },
-            victory: { ...DEFAULT_RULES.victory, ...(rules?.victory || {}) },
+            victory: {
+                ...DEFAULT_RULES.victory,
+                ...(rules?.victory || {}),
+                enabled: { ...DEFAULT_RULES.victory.enabled, ...(rules?.victory?.enabled || {}) }
+            },
             minefields: { ...DEFAULT_RULES.minefields, ...(rules?.minefields || {}) },
             hulls: rules?.hulls?.length ? rules.hulls : DEFAULT_RULES.hulls,
             technologyFields: technologyFields?.fields?.length ? technologyFields.fields : DEFAULT_TECH_FIELDS.fields
