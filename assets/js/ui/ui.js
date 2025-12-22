@@ -15,6 +15,10 @@ export const UI = {
     audio: {
         ctx: null
     },
+    aiWorker: null,
+    aiWorkerRequests: new Map(),
+    aiWorkerRequestId: 0,
+    turnPending: false,
     init: function() {
         this.renderTech();
         this.setupDesignWorkshop();
@@ -24,6 +28,7 @@ export const UI = {
         this.updateEmpire();
         this.updateFleets();
         this.updateResearch();
+        this.setupAIWorker();
 
         document.getElementById('rd-slider').addEventListener('input', e => {
             const value = parseInt(e.target.value, 10);
@@ -51,6 +56,68 @@ export const UI = {
             this.updateComms();
             this.updateEmpire();
         });
+    },
+
+    setupAIWorker: function() {
+        if (typeof Worker === "undefined") {
+            return;
+        }
+        try {
+            this.aiWorker = new Worker(new URL("../ai/aiWorker.js", import.meta.url), { type: "module" });
+            this.aiWorker.addEventListener("message", event => {
+                const { type, payload } = event.data || {};
+                if (type !== "AI_TURN_RESULTS") {
+                    return;
+                }
+                const requestId = payload?.requestId;
+                const resolver = this.aiWorkerRequests.get(requestId);
+                if (resolver) {
+                    this.aiWorkerRequests.delete(requestId);
+                    resolver(payload);
+                }
+            });
+        } catch (error) {
+            this.aiWorker = null;
+        }
+    },
+
+    submitTurn: async function() {
+        if (this.turnPending) {
+            return;
+        }
+        const aiPlayers = Game.players.filter(player => player.type === "ai" && player.status === "active");
+        if (!aiPlayers.length || !this.aiWorker) {
+            Game.turn();
+            return;
+        }
+        this.turnPending = true;
+        const difficulty = Game.aiConfig?.difficulty?.[Game.aiDifficulty] || Game.aiConfig?.difficulty?.normal;
+        const maxTimeMs = Game.aiConfig?.maxTurnTimeMs ?? 100;
+        const seed = Game.hashTurnSeed(Game.turnHash, BigInt(Game.turnCount + 1));
+        const tasks = aiPlayers.map(player => ({
+            playerId: player.id,
+            difficulty,
+            maxTimeMs,
+            state: Game.buildAIVisibleState(player.id)
+        }));
+        const requestId = ++this.aiWorkerRequestId;
+        const response = new Promise(resolve => {
+            this.aiWorkerRequests.set(requestId, resolve);
+        });
+        this.aiWorker.postMessage({
+            type: "RUN_AI_TURNS",
+            payload: { requestId, seed, tasks }
+        });
+        try {
+            const payload = await response;
+            if (payload?.error) {
+                Game.turn();
+            } else {
+                Game.turn({ skipAITurns: true, aiResults: payload.results, aiRolls: payload.rollCalls });
+            }
+        } finally {
+            this.turnPending = false;
+        }
     },
 
     saveDesign: function() {

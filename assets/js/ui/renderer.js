@@ -87,7 +87,7 @@ export const Renderer = {
         window.addEventListener('keydown', e => {
             if (e.code === 'Space') {
                 e.preventDefault();
-                Game.turn();
+                ui.submitTurn?.();
             }
             if (e.code === 'Escape') {
                 ui.setScreen('map');
