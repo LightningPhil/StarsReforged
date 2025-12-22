@@ -188,12 +188,12 @@ const applyConcentrationDepletion = (star, type, floorYears) => {
     if (concentration <= 0 || star.mines <= 0) {
         return;
     }
-    const yearsToDrop = Math.max(floorYears, BASE_DEPLETION_YEARS / (concentration * star.mines));
+    const yearsToDrop = Math.max(floorYears, BASE_DEPLETION_YEARS / concentration / star.mines);
     const depletion = 1 / yearsToDrop;
     star.concentration[type] = Math.max(0, concentration - depletion);
 };
 
-const resolveQueue = ({ state, star, productionPoints, raceModifiers, race }) => {
+const resolveQueue = ({ state, star, productionPoints, raceModifiers, race, alternateReality }) => {
     const economy = state.economy?.[star.owner];
     if (!economy) {
         return 0;
@@ -236,6 +236,10 @@ const resolveQueue = ({ state, star, productionPoints, raceModifiers, race }) =>
         const item = queue[index];
         if (!item) {
             continue;
+        }
+        if (alternateReality && item.type === "structure" && (item.kind === "mine" || item.kind === "factory")) {
+            item.blocked = true;
+            break;
         }
         if (!item.mineralCost && Number.isFinite(item.cost)) {
             item.mineralCost = {
@@ -324,10 +328,10 @@ export const resolvePlanetEconomy = (state) => {
             star.habitability = Math.round(habitabilityValue);
             star.deathRate = habitabilityValue < 0 ? Math.round(Math.abs(habitabilityValue) / 10) : 0;
             const maxPopulation = getMaxPopulation(star, race, raceModifiers, alternateReality);
-            if (raceModifiers.noFactories) {
+            if (raceModifiers.noFactories || alternateReality) {
                 star.factories = 0;
             }
-            if (raceModifiers.noMines) {
+            if (raceModifiers.noMines || alternateReality) {
                 star.mines = 0;
             }
             if (habitabilityValue < 0) {
@@ -356,19 +360,19 @@ export const resolvePlanetEconomy = (state) => {
                 productionMultiplier = 0;
             }
             const adjustedPopIncome = Math.floor(popIncome * productionMultiplier);
-            const maxFactories = getMaxInstallations(star.pop, economyRules.maxFactoriesPer10k);
-            const maxMines = getMaxInstallations(star.pop, economyRules.maxMinesPer10k);
+            const maxFactories = alternateReality ? 0 : getMaxInstallations(star.pop, economyRules.maxFactoriesPer10k);
+            const maxMines = alternateReality ? 0 : getMaxInstallations(star.pop, economyRules.maxMinesPer10k);
             if (Number.isFinite(maxFactories)) {
                 star.factories = Math.min(star.factories, maxFactories);
             }
             if (Number.isFinite(maxMines)) {
                 star.mines = Math.min(star.mines, maxMines);
             }
-            const effectiveFactories = raceModifiers.noFactories ? 0 : Math.min(star.factories, maxFactories);
+            const effectiveFactories = raceModifiers.noFactories || alternateReality ? 0 : Math.min(star.factories, maxFactories);
             let resources = adjustedPopIncome + (effectiveFactories * economyRules.resPerFactory);
             if (alternateReality) {
                 const energyLevel = techState?.fields?.ENER?.level ?? 0;
-                resources = Math.floor((star.pop * Math.max(1, energyLevel)) / POP_OUTPUT_DIVISOR);
+                resources = Math.floor((star.pop * Math.max(0, energyLevel)) / POP_OUTPUT_DIVISOR);
             }
             const productionPoints = Math.max(0, alternateReality ? resources : resources);
 
@@ -398,10 +402,13 @@ export const resolvePlanetEconomy = (state) => {
             applyConcentrationDepletion(star, "b", depletionFloor);
             applyConcentrationDepletion(star, "g", depletionFloor);
 
-            const remainingResources = resolveQueue({ state, star, productionPoints, raceModifiers, race });
+            const remainingResources = resolveQueue({ state, star, productionPoints, raceModifiers, race, alternateReality });
             if (remainingResources > 0 && star.autoBuild) {
                 const buildKind = star.autoBuild.kind;
                 if (shouldAutoBuild(star, buildKind) && buildKind !== "terraform") {
+                    if (alternateReality && (buildKind === "factory" || buildKind === "mine")) {
+                        return;
+                    }
                     if (buildKind === "factory" && raceModifiers.noFactories) {
                         return;
                     }

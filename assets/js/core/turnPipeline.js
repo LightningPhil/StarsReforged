@@ -1,6 +1,6 @@
 import { TurnEngine } from "./turnEngine.js";
 import { assembleGameState, deserializeOrdersState, deserializePlayerState } from "./loadState.js";
-import { serializeHistoryState, serializePlayerState, serializeUniverseState } from "./saveState.js";
+import { serializeHistoryState, serializeUniverseState } from "./saveState.js";
 
 const normalizeArray = (value) => (Array.isArray(value) ? value : []);
 
@@ -75,10 +75,11 @@ export const runTurnPipeline = ({ universeState, playerStates, orderStates }) =>
 
     const combinedOrders = normalizeOrderStates(orderStates);
     gameState.orders = combinedOrders;
-    const nextState = TurnEngine.processTurn(gameState);
+    const turnResult = TurnEngine.processTurn(gameState);
+    const nextState = turnResult.nextState;
 
     const nextUniverseState = serializeUniverseState(nextState);
-    const nextPlayerStates = nextState.players.map(player => serializePlayerState(nextState, player.id));
+    const nextPlayerStates = turnResult.playerStates;
     const historyState = serializeHistoryState(nextState);
 
     return {
@@ -99,9 +100,9 @@ export const runHostTurn = ({ universeState, orders }) => {
         return null;
     }
     gameState.orders = normalizeOrdersInput(orders);
-    const nextState = TurnEngine.processTurn(gameState);
+    const turnResult = TurnEngine.processTurn(gameState);
     return {
-        newUniverseState: serializeUniverseState(nextState),
-        playerViews: nextState.players.map(player => serializePlayerState(nextState, player.id))
+        newUniverseState: serializeUniverseState(turnResult.nextState),
+        playerViews: turnResult.playerStates
     };
 };

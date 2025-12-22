@@ -533,8 +533,8 @@ export const Game = {
         this.orders = this.collectOrders();
         const stargateOrders = this.orders.filter(order => order.type === ORDER_TYPES.STARGATE_JUMP && order.issuerId === 1);
         const sweepOrders = this.orders.filter(order => order.type === ORDER_TYPES.SWEEP_MINES && order.issuerId === 1);
-        const nextState = TurnEngine.processTurn(this);
-        this.applyState(nextState);
+        const turnResult = TurnEngine.processTurn(this);
+        this.applyState(turnResult.nextState);
         if (this.orderErrors?.length) {
             this.orderErrors.forEach(error => {
                 this.logMsg(`ORDER ERROR: ${error}`, "System", "high");
@@ -587,7 +587,6 @@ export const Game = {
             });
         }
         this.resolveEndOfTurn();
-        this.updateVisibility();
         this.finalizeTurnLog();
     },
 
