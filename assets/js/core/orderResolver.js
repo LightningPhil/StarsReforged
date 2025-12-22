@@ -241,6 +241,13 @@ const resolveLaunchPacket = (state, order) => {
         logOrderError(state, `Insufficient minerals for packet launch.`);
         return;
     }
+    const raceModifiers = resolveRaceModifiers(state.race).modifiers;
+    const efficiency = raceModifiers.massDriverEfficiency || 1;
+    const payload = Math.max(0, Math.floor(amount * efficiency));
+    if (payload <= 0) {
+        logOrderError(state, `Packet launch failed due to efficiency losses.`);
+        return;
+    }
     const driverRules = state.rules?.massDriver || {};
     const driverSpeed = driverRules.speed ?? null;
     const driverRating = driverRules.driverRating ?? driverSpeed ?? null;
@@ -251,7 +258,7 @@ const resolveLaunchPacket = (state, order) => {
         destX: target.x,
         destY: target.y,
         destId: target.id,
-        payload: amount,
+        payload,
         owner: order.issuerId,
         speed: driverSpeed,
         driverRating

@@ -11,9 +11,10 @@ const TRAIT_CATALOG = {
         cost: 4,
         exclusiveGroup: "primary",
         modifiers: {
-            populationGrowth: 1.2,
-            maxPopulationMultiplier: 1.15,
-            startingTechLevels: { BIOT: 1 }
+            populationGrowth: 2,
+            maxPopulationMultiplier: 0.5,
+            startingTechLevels: { BIOT: 1 },
+            noStargates: true
         }
     },
     SS: {
@@ -23,9 +24,9 @@ const TRAIT_CATALOG = {
         cost: 4,
         exclusiveGroup: "primary",
         modifiers: {
-            shipCloakBonus: 15,
+            shipCloakBonus: 75,
             shipScannerMultiplier: 1.1,
-            startingTechLevels: { ELEC: 1 }
+            startingTechLevels: { ELEC: 5 }
         }
     },
     WM: {
@@ -35,9 +36,10 @@ const TRAIT_CATALOG = {
         cost: 4,
         exclusiveGroup: "primary",
         modifiers: {
-            shipCostMultiplier: 0.92,
-            researchCostMultiplier: 1.05,
-            startingTechLevels: { WEAP: 1 }
+            shipCostMultiplier: 0.75,
+            startingTechLevels: { WEAP: 5, PROP: 1, ENER: 1 },
+            noMineLayers: true,
+            restrictedStructures: ["defense_only"]
         }
     },
     CA: {
@@ -47,9 +49,10 @@ const TRAIT_CATALOG = {
         cost: 4,
         exclusiveGroup: "primary",
         modifiers: {
-            habitabilityWidthBonus: 0.1,
-            terraformingRateMultiplier: 1.5,
-            startingTechLevels: { TERR: 1 }
+            habitabilityWidthBonus: 0.3,
+            terraformingRateMultiplier: 2.5,
+            startingTechLevels: { ENER: 1, WEAP: 1, PROP: 1, BIOT: 6 },
+            orbitalTerraforming: true
         }
     },
     IS: {
@@ -59,9 +62,11 @@ const TRAIT_CATALOG = {
         cost: 4,
         exclusiveGroup: "primary",
         modifiers: {
-            populationGrowth: 1.05,
-            maxPopulationMultiplier: 1.2,
-            researchPointMultiplier: 1.05
+            populationGrowth: 1.1,
+            maxPopulationMultiplier: 1.1,
+            researchPointMultiplier: 1.05,
+            defenseCostMultiplier: 0.6,
+            inTransitGrowth: 0.5
         }
     },
     SD: {
@@ -73,9 +78,11 @@ const TRAIT_CATALOG = {
         modifiers: {
             minefieldStrengthMultiplier: 1.3,
             minefieldDamageMultiplier: 1.2,
-            minefieldDecayMultiplier: 0.85,
+            minefieldDecayMultiplier: 0.25,
             minefieldSweepResistanceMultiplier: 1.2,
-            startingTechLevels: { WEAP: 1 }
+            startingTechLevels: { PROP: 2, BIOT: 2 },
+            minefieldScan: true,
+            minefieldDetonation: true
         }
     },
     PP: {
@@ -87,7 +94,7 @@ const TRAIT_CATALOG = {
         modifiers: {
             packetPhysics: true,
             shipRangeMultiplier: 1.05,
-            startingTechLevels: { PROP: 1 }
+            startingTechLevels: { ENER: 4 }
         }
     },
     IT: {
@@ -101,7 +108,10 @@ const TRAIT_CATALOG = {
             stargateRangeMultiplier: 1.5,
             stargateMassMultiplier: 1.5,
             stargateMisjumpMultiplier: 0.6,
-            startingTechLevels: { PROP: 1 }
+            startingTechLevels: { PROP: 5, CONST: 5 },
+            stargateCargo: true,
+            inTransitDeathRate: 0.03,
+            massDriverEfficiency: 0.5
         }
     },
     JOAT: {
@@ -111,9 +121,10 @@ const TRAIT_CATALOG = {
         cost: 4,
         exclusiveGroup: "primary",
         modifiers: {
-            startingTechLevels: { ALL: 1 },
-            researchCostMultiplier: 1.05,
-            researchPointMultiplier: 1.05
+            startingTechLevels: { ALL: 3 },
+            researchCostMultiplier: 1,
+            researchPointMultiplier: 1.05,
+            maxPopulationMultiplier: 1.2
         }
     },
     AR: {
@@ -126,7 +137,10 @@ const TRAIT_CATALOG = {
             alternateReality: true,
             populationGrowth: 0.2,
             maxPopulationMultiplier: 0.7,
-            researchCostMultiplier: 1.05
+            researchCostMultiplier: 1.05,
+            noFactories: true,
+            noPlanetaryDefenses: true,
+            inTransitDeathRate: 0.03
         }
     },
     IFE: {
@@ -136,7 +150,8 @@ const TRAIT_CATALOG = {
         cost: 2,
         exclusiveGroup: "engine",
         modifiers: {
-            shipRangeMultiplier: 1.2
+            shipRangeMultiplier: 1.15,
+            startingTechLevels: { PROP: 1 }
         }
     },
     NRSE: {
@@ -146,7 +161,8 @@ const TRAIT_CATALOG = {
         cost: 2,
         exclusiveGroup: "engine",
         modifiers: {
-            shipRangeMultiplier: 0.9
+            shipRangeMultiplier: 0.9,
+            noRamscoop: true
         }
     },
     CE: {
@@ -155,7 +171,8 @@ const TRAIT_CATALOG = {
         type: "lesser",
         cost: 2,
         modifiers: {
-            shipCostMultiplier: 0.95
+            shipCostMultiplier: 0.5,
+            engineReliabilityPenalty: 0.1
         }
     },
     MA: {
@@ -173,7 +190,8 @@ const TRAIT_CATALOG = {
         type: "lesser",
         cost: 2,
         modifiers: {
-            restrictedComponents: ["scanner_array"]
+            restrictedComponents: ["scanner_array"],
+            noAdvancedScanners: true
         }
     },
     RS: {
@@ -182,7 +200,10 @@ const TRAIT_CATALOG = {
         type: "lesser",
         cost: 2,
         modifiers: {
-            shipCostMultiplier: 1.02
+            shipCostMultiplier: 1.02,
+            regeneratingShields: true,
+            armorStrengthMultiplier: 0.5,
+            shieldStrengthMultiplier: 1.4
         }
     },
     GR: {
@@ -191,15 +212,25 @@ const TRAIT_CATALOG = {
         type: "lesser",
         cost: 2,
         modifiers: {
-            researchFieldCostMultiplier: {
-                WEAP: 1,
-                PROP: 1,
-                CONST: 1,
-                ELEC: 1,
-                ENER: 1,
-                BIOT: 1,
-                TERR: 1
-            }
+            allocationMin: {
+                WEAP: 0.15,
+                PROP: 0.15,
+                CONST: 0.15,
+                ELEC: 0.15,
+                ENER: 0.15,
+                BIOT: 0.15,
+                TERR: 0.15
+            },
+            allocationMax: {
+                WEAP: 0.5,
+                PROP: 0.5,
+                CONST: 0.5,
+                ELEC: 0.5,
+                ENER: 0.5,
+                BIOT: 0.5,
+                TERR: 0.5
+            },
+            researchPointMultiplier: 1.15
         }
     },
     UR: {
@@ -208,7 +239,8 @@ const TRAIT_CATALOG = {
         type: "lesser",
         cost: 2,
         modifiers: {
-            miningRateMultiplier: 1.1
+            scrapRecoveryStarbase: 0.9,
+            scrapRecoveryPlanet: 0.45
         }
     },
     BET: {
@@ -218,8 +250,8 @@ const TRAIT_CATALOG = {
         cost: 2,
         modifiers: {
             bleedingEdgeTech: true,
-            researchCostMultiplier: 0.95,
-            researchPointMultiplier: 0.95
+            researchCostMultiplier: 2,
+            researchPointMultiplier: 1
         }
     },
     LSP: {
@@ -228,7 +260,7 @@ const TRAIT_CATALOG = {
         type: "lesser",
         cost: 2,
         modifiers: {
-            maxPopulationMultiplier: 0.85
+            startingPopulationMultiplier: 0.7
         }
     },
     ISB: {
@@ -237,7 +269,8 @@ const TRAIT_CATALOG = {
         type: "lesser",
         cost: 2,
         modifiers: {
-            shipCostMultiplier: 0.98
+            shipCostMultiplier: 0.8,
+            starbaseCloakBonus: 0.2
         }
     },
     TT: {
@@ -246,8 +279,8 @@ const TRAIT_CATALOG = {
         type: "lesser",
         cost: 2,
         modifiers: {
-            habitabilityWidthBonus: 0.15,
-            terraformingRateMultiplier: 1.5
+            habitabilityWidthBonus: 0.3,
+            terraformingRateMultiplier: 1.7
         }
     }
 };
@@ -259,6 +292,7 @@ const buildBaseModifiers = () => ({
     shipRangeMultiplier: 1,
     shipCloakBonus: 0,
     shipScannerMultiplier: 1,
+    shipCloakMultiplier: 1,
     researchCostMultiplier: 1,
     researchPointMultiplier: 1,
     habitabilityWidthBonus: 0,
@@ -281,6 +315,24 @@ const buildBaseModifiers = () => ({
     stargateRangeMultiplier: 1,
     stargateMassMultiplier: 1,
     stargateMisjumpMultiplier: 1,
+    stargateCargo: false,
+    engineReliabilityPenalty: 0,
+    noStargates: false,
+    noMineLayers: false,
+    noAdvancedScanners: false,
+    noRamscoop: false,
+    regeneratingShields: false,
+    armorStrengthMultiplier: 1,
+    shieldStrengthMultiplier: 1,
+    defenseCostMultiplier: 1,
+    inTransitDeathRate: 0,
+    inTransitGrowth: 0,
+    massDriverEfficiency: 1,
+    scrapRecoveryStarbase: 0.9,
+    scrapRecoveryPlanet: 0.45,
+    startingPopulationMultiplier: 1,
+    restrictedStructures: [],
+    orbitalTerraforming: false,
     alternateReality: false,
     packetPhysics: false
 });
@@ -348,6 +400,9 @@ const applyTraitModifiers = (modifiers, trait) => {
     if (Number.isFinite(effects.shipCloakBonus)) {
         modifiers.shipCloakBonus += effects.shipCloakBonus;
     }
+    if (Number.isFinite(effects.shipCloakMultiplier)) {
+        modifiers.shipCloakMultiplier *= effects.shipCloakMultiplier;
+    }
     if (Number.isFinite(effects.shipScannerMultiplier)) {
         modifiers.shipScannerMultiplier *= effects.shipScannerMultiplier;
     }
@@ -410,6 +465,60 @@ const applyTraitModifiers = (modifiers, trait) => {
     }
     if (Number.isFinite(effects.stargateMisjumpMultiplier)) {
         modifiers.stargateMisjumpMultiplier *= effects.stargateMisjumpMultiplier;
+    }
+    if (Number.isFinite(effects.engineReliabilityPenalty)) {
+        modifiers.engineReliabilityPenalty = Math.max(modifiers.engineReliabilityPenalty, effects.engineReliabilityPenalty);
+    }
+    if (typeof effects.stargateCargo === "boolean") {
+        modifiers.stargateCargo = modifiers.stargateCargo || effects.stargateCargo;
+    }
+    if (typeof effects.noStargates === "boolean") {
+        modifiers.noStargates = modifiers.noStargates || effects.noStargates;
+    }
+    if (typeof effects.noMineLayers === "boolean") {
+        modifiers.noMineLayers = modifiers.noMineLayers || effects.noMineLayers;
+    }
+    if (typeof effects.noAdvancedScanners === "boolean") {
+        modifiers.noAdvancedScanners = modifiers.noAdvancedScanners || effects.noAdvancedScanners;
+    }
+    if (typeof effects.noRamscoop === "boolean") {
+        modifiers.noRamscoop = modifiers.noRamscoop || effects.noRamscoop;
+    }
+    if (typeof effects.regeneratingShields === "boolean") {
+        modifiers.regeneratingShields = modifiers.regeneratingShields || effects.regeneratingShields;
+    }
+    if (Number.isFinite(effects.armorStrengthMultiplier)) {
+        modifiers.armorStrengthMultiplier *= effects.armorStrengthMultiplier;
+    }
+    if (Number.isFinite(effects.shieldStrengthMultiplier)) {
+        modifiers.shieldStrengthMultiplier *= effects.shieldStrengthMultiplier;
+    }
+    if (Number.isFinite(effects.defenseCostMultiplier)) {
+        modifiers.defenseCostMultiplier *= effects.defenseCostMultiplier;
+    }
+    if (Number.isFinite(effects.inTransitDeathRate)) {
+        modifiers.inTransitDeathRate = Math.max(modifiers.inTransitDeathRate, effects.inTransitDeathRate);
+    }
+    if (Number.isFinite(effects.inTransitGrowth)) {
+        modifiers.inTransitGrowth = Math.max(modifiers.inTransitGrowth, effects.inTransitGrowth);
+    }
+    if (Number.isFinite(effects.massDriverEfficiency)) {
+        modifiers.massDriverEfficiency *= effects.massDriverEfficiency;
+    }
+    if (Number.isFinite(effects.scrapRecoveryStarbase)) {
+        modifiers.scrapRecoveryStarbase = effects.scrapRecoveryStarbase;
+    }
+    if (Number.isFinite(effects.scrapRecoveryPlanet)) {
+        modifiers.scrapRecoveryPlanet = effects.scrapRecoveryPlanet;
+    }
+    if (Number.isFinite(effects.startingPopulationMultiplier)) {
+        modifiers.startingPopulationMultiplier *= effects.startingPopulationMultiplier;
+    }
+    if (Array.isArray(effects.restrictedStructures)) {
+        mergeModifierLists(modifiers.restrictedStructures, effects.restrictedStructures);
+    }
+    if (typeof effects.orbitalTerraforming === "boolean") {
+        modifiers.orbitalTerraforming = modifiers.orbitalTerraforming || effects.orbitalTerraforming;
     }
     if (typeof effects.alternateReality === "boolean") {
         modifiers.alternateReality = modifiers.alternateReality || effects.alternateReality;

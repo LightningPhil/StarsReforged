@@ -5,8 +5,8 @@ import { resolveRaceModifiers } from "./raceTraits.js";
 import { getTechnologyModifiers, getTechnologyStateForEmpire } from "./technologyResolver.js";
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
-const BASE_MAX_POP = 1500000;
-const BASE_POP_GROWTH = 1.02;
+const BASE_MAX_POP = 1000000;
+const BASE_POP_GROWTH_RATE = 0.1;
 const POP_OUTPUT_DIVISOR = 1000;
 const BASE_MINING_RATE = 1;
 const BASE_DEPLETION_YEARS = 12500;
@@ -41,11 +41,23 @@ const getPlanetSizeValue = (star) => {
 
 const isHomeworld = (star) => star?.id === 0 || star?.name === "HOMEWORLD";
 
+const parseGrowthRate = (race) => {
+    if (Number.isFinite(race?.growthRate)) {
+        return Math.max(0, race.growthRate);
+    }
+    const raw = typeof race?.growth === "string" ? race.growth : "";
+    const match = raw.match(/([+-]?\d+(?:\.\d+)?)%/);
+    if (match) {
+        return Math.max(0, parseFloat(match[1]) / 100);
+    }
+    return BASE_POP_GROWTH_RATE;
+};
+
 const getMaxPopulationMultiplier = (race, raceModifiers) => {
     const baseMultiplier = raceModifiers?.maxPopulationMultiplier || 1;
     const primaryTrait = race?.primaryTrait;
     if (primaryTrait === "HE") {
-        return (baseMultiplier / 1.15) * 0.5;
+        return baseMultiplier * 0.5;
     }
     if (primaryTrait === "JOAT") {
         return baseMultiplier * 1.2;
@@ -271,20 +283,22 @@ export const resolvePlanetEconomy = (state) => {
         .sort((a, b) => a.id - b.id)
         .forEach(star => {
             normalizeStarEconomy(star);
-            const techModifiers = getTechnologyModifiers(getTechnologyStateForEmpire(state, star.owner));
+            const techState = getTechnologyStateForEmpire(state, star.owner);
+            const techModifiers = getTechnologyModifiers(techState);
             applyTerraforming(star, techModifiers, raceModifiers);
             const habitabilityValue = getHabitabilityScore({ star, race: state.race, techModifiers });
-            star.habitability = Math.round(habitabilityValue);
+        star.habitability = Math.round(habitabilityValue);
             star.deathRate = habitabilityValue < 0 ? Math.round(Math.abs(habitabilityValue / 10) * 100) : 0;
             const maxPopulation = getMaxPopulation(star, state.race, raceModifiers, alternateReality);
             if (habitabilityValue < 0) {
-                const losses = Math.floor(star.pop * (habitabilityValue / 10));
-                star.pop = Math.max(0, Math.floor(star.pop + losses));
+                const losses = Math.floor(star.pop * (Math.abs(habitabilityValue) / 10));
+                star.pop = Math.max(0, Math.floor(star.pop - losses));
             } else if (star.pop < maxPopulation) {
+                const baseGrowthRate = parseGrowthRate(state.race);
                 const growthMultiplier = (techModifiers?.populationGrowth || 1) * (raceModifiers.populationGrowth || 1);
                 const habitabilityMultiplier = Math.max(0, habitabilityValue / 100);
-                const grown = Math.floor(star.pop * BASE_POP_GROWTH * growthMultiplier * habitabilityMultiplier);
-                star.pop = Math.min(maxPopulation, grown);
+                const growth = Math.floor(star.pop * baseGrowthRate * growthMultiplier * habitabilityMultiplier);
+                star.pop = Math.min(maxPopulation, star.pop + growth);
             }
 
             const crowdingRatio = maxPopulation > 0 ? star.pop / maxPopulation : (star.pop > 0 ? Infinity : 0);
@@ -302,14 +316,19 @@ export const resolvePlanetEconomy = (state) => {
                 productionMultiplier = 0;
             }
             const adjustedPopIncome = Math.floor(popIncome * productionMultiplier);
-            const productionPoints = Math.max(0, (alternateReality ? 0 : adjustedPopIncome) + star.factories);
+            const effectiveFactories = raceModifiers.noFactories ? 0 : star.factories;
+            const productionPoints = Math.max(0, (alternateReality ? 0 : adjustedPopIncome) + effectiveFactories);
 
             const economy = state.economy?.[star.owner];
             if (!economy) {
                 return;
             }
 
-            const resources = (alternateReality ? star.factories : adjustedPopIncome + star.factories);
+            let resources = adjustedPopIncome + effectiveFactories;
+            if (alternateReality) {
+                const energyLevel = techState?.fields?.ENER?.level ?? 0;
+                resources = Math.floor((star.pop * Math.max(1, energyLevel)) / POP_OUTPUT_DIVISOR);
+            }
             if (star.owner === 1) {
                 taxTotal += popIncome;
                 industrialOutput += productionPoints;

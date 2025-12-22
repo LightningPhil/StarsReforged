@@ -42,6 +42,7 @@ const cloneStar = (star) => {
     clone.stargateMassLimit = star.stargateMassLimit;
     clone.stargateRange = star.stargateRange;
     clone.stargateTechLevel = star.stargateTechLevel;
+    clone.massDriverRating = star.massDriverRating;
     return clone;
 };
 
@@ -269,14 +270,21 @@ const getFleetStackTotals = (state, fleet) => {
         const cargo = design?.finalStats?.cargo ?? design?.cargo ?? 0;
         const fuel = design?.finalStats?.fuel ?? design?.fuel ?? 0;
         const speed = design?.finalStats?.speed ?? design?.speed ?? 0;
-        const cloak = design?.finalStats?.cloak ?? design?.cloak ?? 0;
+        const cloakPoints = design?.finalStats?.cloakPoints ?? design?.cloakPoints ?? design?.cloak ?? 0;
         totals.shipMass += mass * count;
         totals.cargoCapacity += cargo * count;
         totals.fuelPool += fuel * count;
         totals.minSpeed = totals.minSpeed === null ? speed : Math.min(totals.minSpeed, speed);
-        totals.cloakPoints += cloak * mass * count;
+        totals.cloakPoints += cloakPoints * count;
         if (design?.flags?.includes("ramscoop")) {
             totals.hasRamscoop = true;
+        }
+        const ramscoopFreeSpeed = design?.finalStats?.ramscoopFreeSpeed ?? design?.ramscoopFreeSpeed ?? 0;
+        if (ramscoopFreeSpeed > 0) {
+            totals.ramscoopFreeSpeed = Math.max(totals.ramscoopFreeSpeed, ramscoopFreeSpeed);
+        }
+        if (design?.finalStats?.engineFuelUsage || design?.engineFuelUsage) {
+            totals.engineFuelUsage = design?.finalStats?.engineFuelUsage ?? design?.engineFuelUsage;
         }
         return totals;
     }, {
@@ -285,7 +293,9 @@ const getFleetStackTotals = (state, fleet) => {
         fuelPool: 0,
         minSpeed: null,
         cloakPoints: 0,
-        hasRamscoop: false
+        hasRamscoop: false,
+        ramscoopFreeSpeed: 0,
+        engineFuelUsage: null
     });
 };
 
@@ -334,6 +344,16 @@ const getFleetScanRange = (state, fleet) => {
     return Math.floor(scannerStrength * modifiers.shipRange);
 };
 
+const getPlanetScanRange = (state, empireId) => {
+    const techState = getTechnologyStateForEmpire(state, empireId);
+    const elecLevel = techState?.fields?.ELEC?.level ?? 0;
+    const base = state.rules?.scanners?.planetBaseRange ?? 100;
+    const perLevel = state.rules?.scanners?.planetRangePerLevel ?? 20;
+    const raceModifiers = resolveRaceModifiers(state.race).modifiers;
+    const range = base + (perLevel * elecLevel);
+    return raceModifiers.noAdvancedScanners ? range * 2 : range;
+};
+
 const getIntelState = (scanners, target, cloakPercent = 0) => {
     const effectiveCloak = Math.min(95, Math.max(0, cloakPercent));
     let bestRatio = null;
@@ -376,24 +396,37 @@ const createPlanetSnapshot = (star) => ({
     hasStargate: star.hasStargate,
     stargateMassLimit: star.stargateMassLimit,
     stargateRange: star.stargateRange,
-    stargateTechLevel: star.stargateTechLevel
+    stargateTechLevel: star.stargateTechLevel,
+    massDriverRating: star.massDriverRating
 });
 
-const calculateFuelUsage = (totalMass, warpSpeed, distance) => {
+const getEngineEfficiencyAtWarp = (fuelUsageProfile, warpSpeed) => {
+    if (!Array.isArray(fuelUsageProfile) || warpSpeed <= 0) {
+        return null;
+    }
+    const index = Math.min(9, Math.max(0, Math.round(warpSpeed) - 1));
+    const efficiency = fuelUsageProfile[index];
+    return Number.isFinite(efficiency) ? efficiency : null;
+};
+
+const calculateFuelUsage = (totalMass, warpSpeed, distance, fuelUsageProfile = null) => {
     if (distance <= 0) {
         return 0;
     }
-    const massFactor = Math.max(1, Math.ceil(totalMass / 100));
-    const fuelPerLy = Math.max(1, Math.ceil((warpSpeed * massFactor) / 2));
-    return Math.ceil(distance * fuelPerLy);
+    const efficiency = getEngineEfficiencyAtWarp(fuelUsageProfile, warpSpeed);
+    if (!Number.isFinite(efficiency)) {
+        const massFactor = Math.max(1, Math.ceil(totalMass / 100));
+        const fuelPerLy = Math.max(1, Math.ceil((warpSpeed * massFactor) / 2));
+        return Math.ceil(distance * fuelPerLy);
+    }
+    return Math.ceil((totalMass * efficiency * distance / 200) + 0.9);
 };
 
-const applyRamscoop = (fleet, distance, fuelUse, hasRamscoop = false) => {
-    if (!hasRamscoop) {
-        return fuelUse;
+const applyRamscoop = (warpSpeed, fuelUse, freeSpeed = 0) => {
+    if (freeSpeed > 0 && warpSpeed <= freeSpeed) {
+        return 0;
     }
-    const recovered = Math.floor(distance / 40);
-    return Math.max(0, fuelUse - recovered);
+    return fuelUse;
 };
 
 const buildStackFromDesign = (design, stack) => {
@@ -668,13 +701,26 @@ const resolveMovement = (state) => {
             if (fleet.fuel <= 0 || totals.fuelPool <= 0) {
                 return;
             }
+            const raceModifiers = resolveRaceModifiers(state.race).modifiers;
+            if (raceModifiers.engineReliabilityPenalty > 0 && warpSpeed > 6) {
+                const roll = state.rng?.nextInt ? state.rng.nextInt(100) / 100 : Math.random();
+                if (roll < raceModifiers.engineReliabilityPenalty) {
+                    fleet.fuel = 0;
+                    if (state.turnEvents) {
+                        state.turnEvents.push({
+                            type: "ENGINE_FAILURE",
+                            fleetId: fleet.id
+                        });
+                    }
+                    return;
+                }
+            }
             const distanceToDest = Math.hypot(fleet.dest.x - fleet.x, fleet.dest.y - fleet.y);
             const plannedDistance = Math.min(distanceToDest, speed);
             let fuelUse = applyRamscoop(
-                fleet,
-                plannedDistance,
-                calculateFuelUsage(totalMass, warpSpeed, plannedDistance),
-                totals.hasRamscoop
+                warpSpeed,
+                calculateFuelUsage(totalMass, warpSpeed, plannedDistance, totals.engineFuelUsage),
+                totals.ramscoopFreeSpeed
             );
             let adjustedDistance = plannedDistance;
             if (fuelUse > fleet.fuel && fuelUse > 0) {
@@ -683,18 +729,16 @@ const resolveMovement = (state) => {
                     return;
                 }
                 fuelUse = applyRamscoop(
-                    fleet,
-                    adjustedDistance,
-                    calculateFuelUsage(totalMass, warpSpeed, adjustedDistance),
-                    totals.hasRamscoop
+                    warpSpeed,
+                    calculateFuelUsage(totalMass, warpSpeed, adjustedDistance, totals.engineFuelUsage),
+                    totals.ramscoopFreeSpeed
                 );
                 while (fuelUse > fleet.fuel && adjustedDistance > 0) {
                     adjustedDistance -= 1;
                     fuelUse = applyRamscoop(
-                        fleet,
-                        adjustedDistance,
-                        calculateFuelUsage(totalMass, warpSpeed, adjustedDistance),
-                        totals.hasRamscoop
+                        warpSpeed,
+                        calculateFuelUsage(totalMass, warpSpeed, adjustedDistance, totals.engineFuelUsage),
+                        totals.ramscoopFreeSpeed
                     );
                 }
                 if (adjustedDistance <= 0) {
@@ -705,10 +749,9 @@ const resolveMovement = (state) => {
             const distance = Math.hypot(move.x - fleet.x, move.y - fleet.y);
             if (distance !== adjustedDistance) {
                 fuelUse = applyRamscoop(
-                    fleet,
-                    distance,
-                    calculateFuelUsage(totalMass, warpSpeed, distance),
-                    totals.hasRamscoop
+                    warpSpeed,
+                    calculateFuelUsage(totalMass, warpSpeed, distance, totals.engineFuelUsage),
+                    totals.ramscoopFreeSpeed
                 );
             }
             nextPositions.set(fleet.id, { ...move, fuelUse, start: { x: fleet.x, y: fleet.y } });
@@ -723,6 +766,16 @@ const resolveMovement = (state) => {
         state.movementPaths.push({ fleetId: fleet.id, start: move.start, end });
         fleet.x = move.x;
         fleet.y = move.y;
+        const raceModifiers = resolveRaceModifiers(state.race).modifiers;
+        if (fleet.cargo?.pop && move.start) {
+            if (raceModifiers.inTransitDeathRate > 0) {
+                const deaths = Math.floor(fleet.cargo.pop * raceModifiers.inTransitDeathRate);
+                fleet.cargo.pop = Math.max(0, fleet.cargo.pop - deaths);
+            } else if (raceModifiers.inTransitGrowth > 0) {
+                const growth = Math.floor(fleet.cargo.pop * raceModifiers.inTransitGrowth);
+                fleet.cargo.pop = Math.max(0, fleet.cargo.pop + growth);
+            }
+        }
         if (move.arrived) {
             if (fleet.waypoints?.length) {
                 const waypoint = fleet.waypoints.shift();
@@ -903,6 +956,10 @@ const resolveWaypointTasks = (state) => {
                 break;
             }
             case "LAY_MINES": {
+                const raceModifiers = resolveRaceModifiers(state.race).modifiers;
+                if (raceModifiers.noMineLayers) {
+                    break;
+                }
                 if (fleet.mineLayingCapacity > 0 && fleet.mineUnits > 0) {
                     const mineUnitsToDeploy = Math.min(
                         fleet.mineUnits,
@@ -968,7 +1025,8 @@ const resolveWaypointTasks = (state) => {
             case "SCRAP": {
                 if (star && star.owner === fleet.owner) {
                     const economy = state.economy?.[fleet.owner];
-                    const recoveryRate = Math.min(1, Math.max(0, waypoint.data?.recoveryRate ?? 0.5));
+                    const raceModifiers = resolveRaceModifiers(state.race).modifiers;
+                    const recoveryRate = Math.min(1, Math.max(0, waypoint.data?.recoveryRate ?? raceModifiers.scrapRecoveryPlanet ?? 0.5));
                     const stacks = fleet.shipStacks || [];
                     const hullValue = stacks.reduce((total, stack) => {
                         const design = getDesignForStack(state, fleet, stack);
@@ -1028,9 +1086,20 @@ const resolveCombat = (state) => {
         if (!hasHostiles) {
             return;
         }
-        const result = CombatResolver.resolve(systemId, group.fleets, group.star, (empireId) => (
-            getTechnologyModifiers(getTechnologyStateForEmpire(state, empireId))
-        ));
+        const result = CombatResolver.resolve(
+            systemId,
+            group.fleets,
+            group.star,
+            (empireId) => {
+                const techModifiers = getTechnologyModifiers(getTechnologyStateForEmpire(state, empireId));
+                const raceModifiers = resolveRaceModifiers(state.race).modifiers;
+                return {
+                    ...techModifiers,
+                    regeneratingShields: raceModifiers.regeneratingShields
+                };
+            },
+            state.rng
+        );
         state.fleets = state.fleets.filter(fleet => !group.fleets.includes(fleet));
         state.fleets.push(...result.fleets);
         if (result.report) {
@@ -1070,7 +1139,7 @@ const resolveVisibility = (state) => {
             .sort((a, b) => a.id - b.id)
             .forEach(star => {
                 if (star.owner === playerId) {
-                    scanners.push({ x: star.x, y: star.y, r: 260, owner: playerId });
+                    scanners.push({ x: star.x, y: star.y, r: getPlanetScanRange(state, playerId), owner: playerId });
                 }
             });
         state.fleets
@@ -1083,6 +1152,14 @@ const resolveVisibility = (state) => {
                 }
             });
         state.sectorScans.filter(scan => scan.owner === playerId).forEach(scan => scanners.push(scan));
+        if (raceModifiers.packetPhysics) {
+            const packetScanRange = state.rules?.massDriver?.packetScanRange ?? 200;
+            state.packets.forEach(packet => {
+                if (packet.owner === playerId) {
+                    scanners.push({ x: packet.x, y: packet.y, r: packetScanRange, owner: playerId });
+                }
+            });
+        }
 
         const starVisibility = {};
         const fleetVisibility = {};
@@ -1252,6 +1329,7 @@ export const TurnEngine = {
         resolveFleetTransferOrders(state);
         resolveFleetScrapOrders(state);
         resolveMinefieldSweeping(state);
+        resolveStargateJumps(state);
         resolveMovement(state);
         resolveWaypointTasks(state);
         resolveWormholes(state);
@@ -1259,7 +1337,6 @@ export const TurnEngine = {
         resolveMinefieldLaying(state);
         resolveMinefieldTransitDamage(state);
         resolveMinefieldDecay(state);
-        resolveStargateJumps(state);
         resolvePlanetEconomy(state);
         resolveCombat(state);
         resolveColonization(state);

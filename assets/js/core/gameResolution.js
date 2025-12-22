@@ -49,8 +49,9 @@ const getMinefieldTypeRules = (state, type) => {
         sweepResistance: 1,
         damageMultiplier: 1,
         decayRate: 0.05,
-        safeSpeed: 6,
-        riskFactor: 0.05
+        safeSpeed: 4,
+        riskFactor: 0.003,
+        damagePerEngine: 100
     };
 };
 
@@ -119,6 +120,14 @@ const applyDamageToFleet = (fleet, damage) => {
     fleet.mineHitpoints = Math.max(0, fleet.armor + fleet.structure);
     fleet.hp = Math.max(0, fleet.armor + fleet.structure + fleet.shields);
     return fleet.mineHitpoints <= 0 || fleet.structure <= 0;
+};
+
+const getFleetEngineCount = (fleet) => {
+    const stacks = fleet.shipStacks || [];
+    if (!stacks.length) {
+        return 1;
+    }
+    return stacks.reduce((sum, stack) => sum + Math.max(0, Math.floor(stack.count || 0)), 0);
 };
 
 const getFleetCargoMass = (fleet) => {
@@ -256,15 +265,21 @@ export const resolveMinefieldTransitDamage = (state) => {
                 return;
             }
             const riskFactor = Math.max(0, typeRules.riskFactor ?? 0);
-            const hitChance = Math.min(1, Math.max(0, (warpSpeed - safeSpeed) * riskFactor));
+            const hitChance = Math.min(1, Math.max(0, (warpSpeed - safeSpeed) * riskFactor * lengthInside));
             const roll = state.rng.nextInt(1000) / 1000;
             if (roll >= hitChance) {
                 return;
             }
-            const damage = Math.ceil(minefield.density * warpSpeed
+            const engines = getFleetEngineCount(fleet);
+            const baseDamage = (typeRules.damagePerEngine ?? 0) * engines;
+            const damage = Math.ceil(baseDamage
                 * (typeRules.damageMultiplier || 1)
                 * (raceModifiers.minefieldDamageMultiplier || 1));
             if (damage <= 0) {
+                if (minefield.type === "speed_trap") {
+                    fleet.fuel = 0;
+                    fleet.dest = null;
+                }
                 return;
             }
             const destroyedShip = applyDamageToFleet(fleet, damage);
@@ -278,11 +293,16 @@ export const resolveMinefieldTransitDamage = (state) => {
                     type: "MINEFIELD_HIT",
                     fleetId: fleet.id,
                     minefieldId: minefield.id,
-                    damage
+                    damage,
+                    type: minefield.type
                 });
             }
             if (destroyedShip) {
                 destroyed.add(fleet.id);
+            }
+            if (minefield.type === "speed_trap") {
+                fleet.fuel = 0;
+                fleet.dest = null;
             }
         });
     });
@@ -315,6 +335,9 @@ export const resolveStargateJumps = (state) => {
     }
     const destroyed = new Set();
     const raceModifiers = resolveRaceModifiers(state.race).modifiers;
+    if (raceModifiers.noStargates) {
+        return;
+    }
     const isInterstellarTraveler = state.race?.primaryTrait === "IT";
     orders.forEach(order => {
         const fleet = state.fleets.find(item => item.id === order.fleetId);
@@ -336,7 +359,7 @@ export const resolveStargateJumps = (state) => {
             return;
         }
         const cargoMass = getFleetCargoMass(fleet);
-        if (!isInterstellarTraveler && cargoMass > 0) {
+        if (!isInterstellarTraveler && !raceModifiers.stargateCargo && cargoMass > 0) {
             return;
         }
         const massLimit = (Math.min(source.stargateMassLimit || 0, destination.stargateMassLimit || 0) || 1)

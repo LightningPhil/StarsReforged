@@ -34,6 +34,7 @@ class Star {
         this.stargateMassLimit = 0;
         this.stargateRange = 0;
         this.stargateTechLevel = 0;
+        this.massDriverRating = 0;
     }
 
     updateSnapshot() {
@@ -53,7 +54,8 @@ class Star {
             hasStargate: this.hasStargate,
             stargateMassLimit: this.stargateMassLimit,
             stargateRange: this.stargateRange,
-            stargateTechLevel: this.stargateTechLevel
+            stargateTechLevel: this.stargateTechLevel,
+            massDriverRating: this.massDriverRating
         };
     }
 }
@@ -88,13 +90,16 @@ class ShipDesign {
         this.signature = finalStats.signature;
         this.scanner = finalStats.scanner ?? 0;
         this.camo = finalStats.camo ?? 0;
-        this.cloak = finalStats.cloak ?? 0;
+        this.cloakPoints = finalStats.cloakPoints ?? 0;
+        this.cloak = this.cloakPoints ?? 0;
         this.mineCapacity = finalStats.mineCapacity;
         this.mineLayingCapacity = finalStats.mineLayingCapacity;
         this.mineSweepingStrength = finalStats.mineSweepingStrength;
         this.mineHitpoints = finalStats.mineHitpoints;
         this.initiative = finalStats.initiative;
         this.flags = finalStats.flags || [];
+        this.engineFuelUsage = finalStats.engineFuelUsage ?? null;
+        this.ramscoopFreeSpeed = finalStats.ramscoopFreeSpeed ?? 0;
     }
 }
 
@@ -172,7 +177,8 @@ class Fleet {
             + (this.cargo?.g || 0)
             + (this.cargo?.pop || 0);
         this.hp = this.armor + this.structure + this.shields;
-        this.cloak = design.cloak ?? design.finalStats?.cloak ?? 0;
+        this.cloakPoints = design.cloakPoints ?? design.finalStats?.cloakPoints ?? design.cloak ?? 0;
+        this.cloak = this.cloakPoints;
     }
 
     get speed() {

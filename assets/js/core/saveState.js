@@ -29,7 +29,8 @@ const serializeStar = (star) => ({
     hasStargate: star.hasStargate,
     stargateMassLimit: star.stargateMassLimit,
     stargateRange: star.stargateRange,
-    stargateTechLevel: star.stargateTechLevel
+    stargateTechLevel: star.stargateTechLevel,
+    massDriverRating: star.massDriverRating ?? 0
 });
 
 const serializeFleet = (fleet) => ({
@@ -227,7 +228,8 @@ export const serializePlayerState = (gameState, playerId) => {
                 hasStargate: snapshotData.hasStargate ?? false,
                 stargateMassLimit: snapshotData.stargateMassLimit ?? 0,
                 stargateRange: snapshotData.stargateRange ?? 0,
-                stargateTechLevel: snapshotData.stargateTechLevel ?? 0
+                stargateTechLevel: snapshotData.stargateTechLevel ?? 0,
+                massDriverRating: snapshotData.massDriverRating ?? 0
             };
         });
     const visibleFleets = fleetVisibility

@@ -71,6 +71,7 @@ const buildStackState = (fleet, stack, modifiers, stackIndex) => {
             secondary: battlePlan.secondary ?? battlePlan.secondaryTarget ?? "weakest",
             tactic: battlePlan.tactic ?? battlePlan.tactics ?? "balanced"
         },
+        regeneratingShields: Boolean(modifiers?.regeneratingShields),
         destroyed: false,
         originalCount: Math.max(0, stack.count ?? 0)
     };
@@ -264,10 +265,11 @@ const getMovementBands = (stack) => {
     if (stack.speed <= 0) {
         return 0;
     }
-    return clamp(Math.floor(stack.speed / 4), 1, 2);
+    return Math.max(0, (stack.speed - 4) / 4);
 };
 
 const resolveMovementPhase = (combatants, ranges, frame) => {
+    const movementPhase = frame?.movementPhase ?? 1;
     combatants
         .filter(stack => !stack.destroyed && stack.count > 0)
         .sort(sortByInitiative)
@@ -279,7 +281,7 @@ const resolveMovementPhase = (combatants, ranges, frame) => {
             const currentRange = getRangeBetween(ranges, stack, target);
             const desiredRange = getPreferredRange(stack, currentRange);
             const moveBands = getMovementBands(stack);
-            if (moveBands <= 0 || currentRange === desiredRange) {
+            if (moveBands <= 0 || currentRange === desiredRange || movementPhase > Math.ceil(moveBands)) {
                 return;
             }
             let nextRange = currentRange;
@@ -303,22 +305,22 @@ const resolveMovementPhase = (combatants, ranges, frame) => {
 };
 
 const getBeamRangeMultiplier = (range, beamRange) => {
-    if (beamRange <= 1) {
-        return 1;
+    if (beamRange <= 0) {
+        return 0;
     }
-    const decay = (range - 1) / beamRange;
-    return clamp(1 - decay * 0.5, 0.25, 1);
+    const decay = 0.1 * (range / Math.max(1, beamRange));
+    return clamp(1 - decay, 0, 1);
 };
 
 const getTorpedoAccuracy = (attacker, target, range) => {
-    const base = 0.7;
+    const base = 0.35;
     const rangePenalty = Math.max(0, range - 1) * 0.1;
     const defensePenalty = (target.defense || 0) * 0.01;
     const initiativeBonus = (attacker.initiative || 0) * 0.01;
-    return clamp(base + initiativeBonus - defensePenalty - rangePenalty, 0.15, 0.95);
+    return clamp(base + initiativeBonus - defensePenalty - rangePenalty, 0.05, 0.95);
 };
 
-const resolveFiringPhase = (combatants, ranges, frame) => {
+const resolveFiringPhase = (combatants, ranges, frame, rng) => {
     combatants
         .filter(stack => !stack.destroyed && stack.count > 0)
         .sort(sortByInitiative)
@@ -340,49 +342,58 @@ const resolveFiringPhase = (combatants, ranges, frame) => {
                 return;
             }
             attacks.forEach(attack => {
-                if (target.destroyed || target.count <= 0) {
-                    return;
-                }
-                const baseDamage = Math.max(0, attack.damage * attacker.count);
-                const mitigation = Math.floor(target.defense * target.count * 0.25);
-                const effectiveDamage = Math.max(0, baseDamage - mitigation);
-                if (effectiveDamage <= 0) {
-                    return;
-                }
-                const shots = Math.max(1, attacker.gattling + 1);
-                const perShot = Math.max(1, Math.floor(effectiveDamage / shots));
-                let totalKills = 0;
-                for (let shot = 0; shot < shots; shot += 1) {
-                    if (attack.type === "torpedo") {
-                        const accuracy = getTorpedoAccuracy(attacker, target, range);
-                        if (Math.random() > accuracy) {
-                            continue;
+                const targets = attacker.gattling > 0 && attack.type === "beam"
+                    ? combatants.filter(entry => entry.owner !== attacker.owner
+                        && !entry.destroyed
+                        && entry.count > 0
+                        && getRangeBetween(ranges, attacker, entry) <= attacker.beamRange)
+                    : [target];
+                targets.forEach(entry => {
+                    if (entry.destroyed || entry.count <= 0) {
+                        return;
+                    }
+                    const baseDamage = Math.max(0, attack.damage * attacker.count);
+                    const mitigation = Math.floor(entry.defense * entry.count * 0.25);
+                    const effectiveDamage = Math.max(0, baseDamage - mitigation);
+                    if (effectiveDamage <= 0) {
+                        return;
+                    }
+                    const shots = Math.max(1, attacker.gattling + 1);
+                    const perShot = Math.max(1, Math.floor(effectiveDamage / shots));
+                    let totalKills = 0;
+                    for (let shot = 0; shot < shots; shot += 1) {
+                        if (attack.type === "torpedo") {
+                            const accuracy = getTorpedoAccuracy(attacker, entry, range);
+                            const roll = rng?.nextInt ? rng.nextInt(1000) / 1000 : Math.random();
+                            if (roll > accuracy) {
+                                continue;
+                            }
+                        }
+                        const outcome = applyDamageToStack(entry, perShot, attacker.sapper);
+                        totalKills += outcome.kills;
+                        if (entry.destroyed || entry.count <= 0) {
+                            break;
                         }
                     }
-                    const outcome = applyDamageToStack(target, perShot, attacker.sapper);
-                    totalKills += outcome.kills;
-                    if (target.destroyed || target.count <= 0) {
-                        break;
+                    if (frame) {
+                        const targetStatus = getCurrentShipStatus(entry);
+                        frame.events.push({
+                            type: "attack",
+                            weapon: attack.type,
+                            attackerId: attacker.id,
+                            targetId: entry.id,
+                            range,
+                            damage: effectiveDamage,
+                            kills: totalKills,
+                            targetStatus: {
+                                count: targetStatus.count,
+                                shields: targetStatus.shields,
+                                armor: targetStatus.armor,
+                                structure: targetStatus.structure
+                            }
+                        });
                     }
-                }
-                if (frame) {
-                    const targetStatus = getCurrentShipStatus(target);
-                    frame.events.push({
-                        type: "attack",
-                        weapon: attack.type,
-                        attackerId: attacker.id,
-                        targetId: target.id,
-                        range,
-                        damage: effectiveDamage,
-                        kills: totalKills,
-                        targetStatus: {
-                            count: targetStatus.count,
-                            shields: targetStatus.shields,
-                            armor: targetStatus.armor,
-                            structure: targetStatus.structure
-                        }
-                    });
-                }
+                });
             });
         });
 };
@@ -559,8 +570,9 @@ export const CombatResolver = {
         combatInitiative: 1,
         shieldStrength: 1,
         populationGrowth: 1,
-        habitabilityTolerance: 0
-    })) {
+        habitabilityTolerance: 0,
+        regeneratingShields: false
+    }), rng = null) {
         const participants = fleets.map(fleet => ({ id: fleet.id, owner: fleet.owner, name: fleet.name }));
         const byEmpire = fleets.reduce((acc, fleet) => {
             if (!acc[fleet.owner]) {
@@ -628,14 +640,16 @@ export const CombatResolver = {
                 frames.push(movementFrame);
             }
             const fireFrame = { round, phase: "fire", events: [] };
-            resolveFiringPhase(combatants, ranges, fireFrame);
+            resolveFiringPhase(combatants, ranges, fireFrame, rng);
             frames.push(fireFrame);
             combatants.forEach(stack => {
                 if (stack.destroyed || stack.count <= 0) {
                     return;
                 }
-                const regen = Math.floor((stack.base.shields || 0) * stack.count * 0.25);
-                stack.shieldDamage = Math.max(0, stack.shieldDamage - regen);
+                if (stack.regeneratingShields) {
+                    const regen = Math.floor((stack.base.shields || 0) * stack.count * 0.1);
+                    stack.shieldDamage = Math.max(0, stack.shieldDamage - regen);
+                }
             });
         }
 

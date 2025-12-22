@@ -289,6 +289,7 @@ export const deserializeUniverseState = (state) => {
         star.stargateMassLimit = dto.stargateMassLimit || 0;
         star.stargateRange = dto.stargateRange || 0;
         star.stargateTechLevel = dto.stargateTechLevel || 0;
+        star.massDriverRating = dto.massDriverRating || 0;
         return star;
     });
 

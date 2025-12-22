@@ -125,7 +125,12 @@ export const DB = {
                 cost: 40,
                 powerOutput: 8,
                 powerUsage: 0,
-                stats: { speed: 9, range: 180, fuel: 20 },
+                stats: {
+                    speed: 9,
+                    range: 180,
+                    fuel: 20,
+                    fuelUsage: [0.6, 0.8, 1.1, 1.5, 2.0, 2.6, 3.3, 4.1, 5.0, 6.0]
+                },
                 tech: { PROP: 1 }
             },
             {
@@ -136,7 +141,13 @@ export const DB = {
                 cost: 120,
                 powerOutput: 14,
                 powerUsage: 0,
-                stats: { speed: 14, range: 240, fuel: 40, initiative: 1 },
+                stats: {
+                    speed: 14,
+                    range: 240,
+                    fuel: 40,
+                    initiative: 1,
+                    fuelUsage: [0.5, 0.7, 1.0, 1.3, 1.7, 2.2, 2.8, 3.5, 4.3, 5.2]
+                },
                 tech: { PROP: 3 }
             },
             {
@@ -147,7 +158,13 @@ export const DB = {
                 cost: 240,
                 powerOutput: 20,
                 powerUsage: 0,
-                stats: { speed: 20, range: 320, fuel: 60, initiative: 2 },
+                stats: {
+                    speed: 20,
+                    range: 320,
+                    fuel: 60,
+                    initiative: 2,
+                    fuelUsage: [0.45, 0.6, 0.85, 1.2, 1.6, 2.1, 2.7, 3.4, 4.2, 5.1]
+                },
                 tech: { PROP: 5 }
             },
             {
@@ -158,7 +175,13 @@ export const DB = {
                 cost: 360,
                 powerOutput: 26,
                 powerUsage: 0,
-                stats: { speed: 26, range: 400, fuel: 90, initiative: 3 },
+                stats: {
+                    speed: 26,
+                    range: 400,
+                    fuel: 90,
+                    initiative: 3,
+                    fuelUsage: [0.4, 0.55, 0.8, 1.1, 1.5, 2.0, 2.6, 3.3, 4.1, 5.0]
+                },
                 tech: { PROP: 7 }
             }
         ],
