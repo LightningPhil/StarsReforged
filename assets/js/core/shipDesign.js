@@ -50,26 +50,27 @@ const getRequirementDelta = (requirements, techState) => {
     return Math.min(...entries.map(([fieldId, level]) => getTechLevel(techState, fieldId) - level));
 };
 
-const getMiniaturizationDiscount = (requirements, techState) => {
+const getMiniaturizationDiscount = (requirements, techState, raceModifiers) => {
     const delta = getRequirementDelta(requirements, techState);
     if (delta <= 0) {
         return 0;
     }
-    return Math.min(0.5, delta * 0.04);
+    const cap = raceModifiers?.bleedingEdgeTech ? 0.8 : 0.75;
+    return Math.min(cap, delta * 0.05);
 };
 
-const applyMiniaturization = (value, requirements, techState) => {
+const applyMiniaturization = (value, requirements, techState, raceModifiers) => {
     if (!Number.isFinite(value)) {
         return 0;
     }
-    const discount = getMiniaturizationDiscount(requirements, techState);
+    const discount = getMiniaturizationDiscount(requirements, techState, raceModifiers);
     return Math.max(0, Math.round(value * (1 - discount)));
 };
 
-const getAdjustedComponent = (component, techState) => ({
+const getAdjustedComponent = (component, techState, raceModifiers) => ({
     ...component,
-    adjustedMass: applyMiniaturization(component.mass ?? 0, component.tech, techState),
-    adjustedCost: applyMiniaturization(component.cost ?? 0, component.tech, techState)
+    adjustedMass: applyMiniaturization(component.mass ?? 0, component.tech, techState, raceModifiers),
+    adjustedCost: applyMiniaturization(component.cost ?? 0, component.tech, techState, raceModifiers)
 });
 
 const collectFlags = (components) => {
@@ -82,7 +83,7 @@ const collectFlags = (components) => {
 };
 
 export const calculateDesignStats = (hull, components, techState = null, raceModifiers = null) => {
-    const adjustedComponents = components.map(component => getAdjustedComponent(component, techState));
+    const adjustedComponents = components.map(component => getAdjustedComponent(component, techState, raceModifiers));
     const mass = hull.baseMass + adjustedComponents.reduce((sum, component) => sum + component.adjustedMass, 0);
     const armor = hull.armor + sumStat(components, "armor");
     const structure = hull.structure + sumStat(components, "structure");
@@ -125,6 +126,7 @@ export const calculateDesignStats = (hull, components, techState = null, raceMod
     const sapper = Math.max(0, Math.min(0.8, sumStat(components, "sapper")));
 
     const baseCost = hull.cost + adjustedComponents.reduce((sum, component) => sum + component.adjustedCost, 0);
+    const discountedCost = hull.type === "starbase" ? Math.round(baseCost * 0.5) : baseCost;
 
     return {
         mass,
@@ -156,7 +158,7 @@ export const calculateDesignStats = (hull, components, techState = null, raceMod
         gattling,
         sapper,
         flags: collectFlags(components),
-        baseCost
+        baseCost: discountedCost
     };
 };
 

@@ -1164,7 +1164,7 @@ export const Game = {
         return {
             level: field.level,
             storedRP: field.storedRP,
-            rpToNextLevel: getRpToNextLevel(field.level, this.rules, raceModifiers, field.id)
+            rpToNextLevel: getRpToNextLevel(field.level, this.rules, raceModifiers, field.id, techState)
         };
     },
 
