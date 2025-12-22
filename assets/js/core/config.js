@@ -39,9 +39,27 @@ export const DEFAULT_RULES = {
     },
     minefields: {
         types: {
-            standard: { sweepResistance: 1.0, damageMultiplier: 1.0, decayRate: 0.05 },
-            heavy: { sweepResistance: 1.5, damageMultiplier: 1.25, decayRate: 0.03 },
-            smart: { sweepResistance: 2.0, damageMultiplier: 1.5, decayRate: 0.02 }
+            standard: {
+                sweepResistance: 1.0,
+                damageMultiplier: 1.0,
+                decayRate: 0.05,
+                safeSpeed: 6,
+                riskFactor: 0.05
+            },
+            heavy: {
+                sweepResistance: 1.5,
+                damageMultiplier: 1.25,
+                decayRate: 0.03,
+                safeSpeed: 5,
+                riskFactor: 0.07
+            },
+            smart: {
+                sweepResistance: 2.0,
+                damageMultiplier: 1.5,
+                decayRate: 0.02,
+                safeSpeed: 4,
+                riskFactor: 0.1
+            }
         }
     },
     massDriver: {
