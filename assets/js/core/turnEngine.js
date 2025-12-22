@@ -1059,12 +1059,11 @@ const resolveVisibility = (state) => {
     state.minefieldIntel = state.minefieldIntel || {};
     state.wormholeIntel = state.wormholeIntel || {};
     state.wormholes = state.wormholes || [];
-    const raceModifiers = resolveRaceModifiers(state.race).modifiers;
-    const packetCloak = raceModifiers.packetPhysics ? 50 : 0;
-    const hiddenFieldCloak = 75;
-
     state.players.forEach(player => {
         const playerId = player.id;
+        const raceModifiers = resolveRaceModifiers(state.race).modifiers;
+        const packetCloak = raceModifiers.packetPhysics ? 50 : 0;
+        const hiddenFieldCloak = 75;
         const scanners = [];
         state.stars
             .slice()

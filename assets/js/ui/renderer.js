@@ -257,10 +257,12 @@ export const Renderer = {
 
     drawStargates: function(ctx) {
         Game.stars.forEach(star => {
-            if (!star.visible && !star.known) {
+            const intelEntry = Game.planetKnowledge?.[1]?.[star.id];
+            const isKnown = star.visible || star.known || Boolean(intelEntry);
+            if (!isKnown) {
                 return;
             }
-            const info = star.visible ? star : star.snapshot;
+            const info = star.visible ? star : (star.snapshot ?? intelEntry?.snapshot);
             if (!info?.hasStargate) {
                 return;
             }
@@ -334,13 +336,14 @@ export const Renderer = {
 
     drawStars: function(ctx) {
         Game.stars.forEach(star => {
-            if (!star.visible && !star.known) {
+            const intelEntry = Game.planetKnowledge?.[1]?.[star.id];
+            const isKnown = star.visible || star.known || Boolean(intelEntry);
+            if (!isKnown) {
                 return;
             }
             const isSel = Game.selection && Game.selection.type === 'star' && Game.selection.id === star.id;
-            const info = star.visible ? star : star.snapshot;
-            const intelEntry = Game.planetKnowledge?.[1]?.[star.id];
-            const hasOldIntel = !star.visible && star.known && intelEntry?.turn_seen != null;
+            const info = star.visible ? star : (star.snapshot ?? intelEntry?.snapshot);
+            const hasOldIntel = !star.visible && intelEntry?.turn_seen != null;
             const col = info.owner === 1 ? '#00f0ff' : (info.owner ? '#ff0055' : '#ffffff');
             const alpha = star.visible ? 1 : 0.35;
 
