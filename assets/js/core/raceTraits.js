@@ -163,7 +163,7 @@ const TRAIT_CATALOG = {
         type: "lesser",
         cost: 2,
         modifiers: {
-            mineralAlchemyRate: 2
+            mineralAlchemyRate: 25
         }
     },
     NAS: {
@@ -269,7 +269,7 @@ const buildBaseModifiers = () => ({
     researchFieldCostMultiplier: {},
     startingTechLevels: {},
     miningRateMultiplier: 1,
-    mineralAlchemyRate: 0,
+    mineralAlchemyRate: 100,
     terraformingRateMultiplier: 1,
     minefieldStrengthMultiplier: 1,
     minefieldDamageMultiplier: 1,
@@ -379,7 +379,7 @@ const applyTraitModifiers = (modifiers, trait) => {
         modifiers.miningRateMultiplier *= effects.miningRateMultiplier;
     }
     if (Number.isFinite(effects.mineralAlchemyRate)) {
-        modifiers.mineralAlchemyRate = Math.max(modifiers.mineralAlchemyRate, effects.mineralAlchemyRate);
+        modifiers.mineralAlchemyRate = Math.min(modifiers.mineralAlchemyRate, effects.mineralAlchemyRate);
     }
     if (Number.isFinite(effects.terraformingRateMultiplier)) {
         modifiers.terraformingRateMultiplier *= effects.terraformingRateMultiplier;
