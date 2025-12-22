@@ -31,6 +31,22 @@ const collectScannerSources = (hull, components) => {
     });
     return sources;
 };
+const collectFuelUsageProfiles = (components) => components
+    .filter(component => component.slotType === "engine")
+    .map(component => component.stats?.fuelUsage)
+    .filter(profile => Array.isArray(profile) && profile.length >= 10);
+
+const mergeFuelUsageProfiles = (profiles) => {
+    if (!profiles.length) {
+        return null;
+    }
+    const merged = [];
+    for (let i = 0; i < 10; i += 1) {
+        const values = profiles.map(profile => profile[i]).filter(value => Number.isFinite(value));
+        merged[i] = values.length ? Math.min(...values) : null;
+    }
+    return merged;
+};
 const resolveScannerStrength = (hull, components) => {
     const sources = collectScannerSources(hull, components);
     if (!sources.length) {
@@ -85,7 +101,7 @@ const collectFlags = (components) => {
 export const calculateDesignStats = (hull, components, techState = null, raceModifiers = null) => {
     const adjustedComponents = components.map(component => getAdjustedComponent(component, techState, raceModifiers));
     const mass = hull.baseMass + adjustedComponents.reduce((sum, component) => sum + component.adjustedMass, 0);
-    const armor = hull.armor + sumStat(components, "armor");
+    const armorBase = hull.armor + sumStat(components, "armor");
     const structure = hull.structure + sumStat(components, "structure");
     const powerOutput = components.reduce((sum, component) => sum + (component.powerOutput || 0), 0);
     const powerUsage = components.reduce((sum, component) => sum + (component.powerUsage || 0), 0);
@@ -110,19 +126,24 @@ export const calculateDesignStats = (hull, components, techState = null, raceMod
     const defense = Math.max(0, Math.floor((hull.baseDefense || 0)
         + sumStat(components, "defense")
         + sumStat(components, "evasion")));
-    const shields = Math.max(0, Math.floor((hull.baseShields || 0) + sumStat(components, "shields") + defense * 0.5));
+    const shieldsBase = Math.max(0, Math.floor((hull.baseShields || 0) + sumStat(components, "shields") + defense * 0.5));
+    const armor = Math.max(0, Math.floor(armorBase * (raceModifiers?.armorStrengthMultiplier || 1)));
+    const shields = Math.max(0, Math.floor(shieldsBase * (raceModifiers?.shieldStrengthMultiplier || 1)));
 
     const mineCapacity = sumStat(components, "mineCapacity");
     const mineLayingCapacity = sumStat(components, "mineLayingCapacity") || mineCapacity;
     const signature = (hull.signature || Math.ceil(hull.baseMass / 20)) + Math.ceil(mass / 120);
     const scanner = resolveScannerStrength(hull, components) * (raceModifiers?.shipScannerMultiplier || 1);
     const camo = Math.max(0, Math.floor((hull.camo || 0) + sumStat(components, "camo")));
-    const cloak = Math.max(0, Math.min(95, Math.floor(camo + (raceModifiers?.shipCloakBonus || 0))));
+    const cloakPoints = Math.max(0, Math.floor((camo + (raceModifiers?.shipCloakBonus || 0))
+        * (raceModifiers?.shipCloakMultiplier || 1)));
     const beamRange = Math.max(0, maxStat(components, "beamRange"));
     const torpedoRange = Math.max(0, maxStat(components, "torpedoRange"));
     const bombing = Math.max(0, Math.floor(sumStat(components, "bombing") + torpedoDamage * 0.2));
     const gattling = Math.max(0, Math.floor(sumStat(components, "gattling")));
     const sapper = Math.max(0, Math.min(0.8, sumStat(components, "sapper")));
+    const engineFuelUsage = mergeFuelUsageProfiles(collectFuelUsageProfiles(components));
+    const ramscoopFreeSpeed = Math.max(0, sumStat(components, "freeSpeed"));
 
     const baseCost = hull.cost + adjustedComponents.reduce((sum, component) => sum + component.adjustedCost, 0);
     const discountedCost = hull.type === "starbase" ? Math.round(baseCost * 0.5) : baseCost;
@@ -143,7 +164,7 @@ export const calculateDesignStats = (hull, components, techState = null, raceMod
         signature,
         scanner,
         camo,
-        cloak,
+        cloakPoints,
         mineCapacity,
         mineLayingCapacity,
         mineSweepingStrength,
@@ -157,7 +178,9 @@ export const calculateDesignStats = (hull, components, techState = null, raceMod
         gattling,
         sapper,
         flags: collectFlags(components),
-        baseCost: discountedCost
+        baseCost: discountedCost,
+        engineFuelUsage,
+        ramscoopFreeSpeed
     };
 };
 
@@ -308,4 +331,3 @@ export const buildShipDesign = ({ name, hull, componentIds = [], designId, race 
     });
     return { design, errors: [], stats: finalStats };
 };
-    const mineSweepingStrength = Math.max(0, Math.floor(beamDamage * Math.pow(beamRange, 2)));

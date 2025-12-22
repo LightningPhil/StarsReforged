@@ -62,16 +62,16 @@ const getFleetStackTotals = (game, fleet) => {
     const stacks = fleet.shipStacks || [];
     if (!stacks.length) {
         const mass = fleet.design?.finalStats?.mass ?? fleet.design?.mass ?? 0;
-        const cloak = fleet.design?.finalStats?.cloak ?? fleet.design?.cloak ?? 0;
-        return { shipMass: mass, cloakPoints: cloak * mass };
+        const cloakPoints = fleet.design?.finalStats?.cloakPoints ?? fleet.design?.cloakPoints ?? fleet.design?.cloak ?? 0;
+        return { shipMass: mass, cloakPoints: cloakPoints };
     }
     return stacks.reduce((totals, stack) => {
         const design = getDesignForStack(game, fleet, stack);
         const mass = design?.finalStats?.mass ?? design?.mass ?? 0;
-        const cloak = design?.finalStats?.cloak ?? design?.cloak ?? 0;
+        const cloakPoints = design?.finalStats?.cloakPoints ?? design?.cloakPoints ?? design?.cloak ?? 0;
         const count = stack?.count || 1;
         totals.shipMass += mass * count;
-        totals.cloakPoints += cloak * mass * count;
+        totals.cloakPoints += cloakPoints * count;
         return totals;
     }, { shipMass: 0, cloakPoints: 0 });
 };

@@ -37,8 +37,8 @@ const getPacketSpeed = (packet, rules) => {
     return Math.max(0, Number.isFinite(speed) ? speed : 0);
 };
 
-const getPacketDriverRating = (packet, rules, speed) => {
-    const rating = packet.driverRating ?? rules.driverRating ?? speed;
+const getPacketDriverRating = (packet, rules, speed, targetRating = null) => {
+    const rating = Number.isFinite(targetRating) ? targetRating : (packet.driverRating ?? rules.driverRating ?? speed);
     return Math.max(0, Number.isFinite(rating) ? rating : 0);
 };
 
@@ -144,7 +144,9 @@ export const resolveMassDriverPackets = (state) => {
         .forEach(packet => {
             packet.payload = normalizePayload(packet.payload);
             const speed = getPacketSpeed(packet, rules);
-            const driverRating = getPacketDriverRating(packet, rules, speed);
+            const targetStar = state.stars?.find(target => target.id === packet.destId);
+            const targetRating = targetStar?.massDriverRating ?? null;
+            const driverRating = getPacketDriverRating(packet, rules, speed, targetRating);
             const decayRate = getPacketDecayRate(packet, speed, driverRating, rules);
             const catchRadius = packet.catchRadius ?? defaultCatchRadius;
             const travelDistance = speed ** 2;
@@ -158,7 +160,7 @@ export const resolveMassDriverPackets = (state) => {
                 return;
             }
 
-            const star = state.stars?.find(target => target.id === packet.destId);
+            const star = targetStar;
             const nearbyFleet = state.fleets?.find(target => Math.hypot(target.x - packet.x, target.y - packet.y) <= catchRadius);
             const isResourcePacket = (packet.type || "resource") === "resource";
 
