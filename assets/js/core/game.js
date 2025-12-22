@@ -22,12 +22,6 @@ import { enforceAllocationRules, resolveRaceModifiers } from "./raceTraits.js";
 import { buildShipDesign } from "./shipDesign.js";
 import { Order, ORDER_TYPES } from "../models/orders.js";
 
-let ui = null;
-
-export const bindUI = (uiRef) => {
-    ui = uiRef;
-};
-
 const getDesignForStack = (game, fleet, stack) => {
     const designs = game.shipDesigns?.[fleet.owner] || [];
     if (stack?.designId) {
@@ -83,6 +77,11 @@ const getFleetCloakPercent = (game, fleet) => {
         return 0;
     }
     return Math.round(totals.cloakPoints / totalMass);
+};
+
+const getRaceForEmpire = (game, empireId) => {
+    const player = game.players?.find(entry => entry.id === empireId);
+    return player?.race || game.race;
 };
 
 const getFleetScanRange = (game, fleet) => {
@@ -210,9 +209,6 @@ export const Game = {
             this.logMsg("Welcome, Emperor. The sector is uncharted.", "System");
         }
 
-        if (ui?.init) {
-            ui.init();
-        }
         this.updateVisibility();
     },
 
@@ -291,6 +287,7 @@ export const Game = {
                 type: "human",
                 status: "active",
                 eliminatedAtTurn: null,
+                race: this.race,
                 technology: createTechnologyState(techFields, undefined, raceModifiers)
             },
             ...aiPlayers.map(id => ({
@@ -298,6 +295,7 @@ export const Game = {
                 type: "ai",
                 status: "active",
                 eliminatedAtTurn: null,
+                race: this.race,
                 technology: createTechnologyState(techFields, undefined, raceModifiers)
             }))
         ];
@@ -579,15 +577,6 @@ export const Game = {
         }
         this.resolveEndOfTurn();
         this.updateVisibility();
-        if (ui) {
-            ui.updateHeader();
-            ui.updateSide();
-            ui.updateEmpire();
-            ui.updateFleets();
-            ui.updateResearch();
-            ui.updateComms();
-        }
-        ui?.playSound?.(140, 0.08);
         this.finalizeTurnLog();
     },
 
@@ -772,7 +761,7 @@ export const Game = {
         if (!techState) {
             return;
         }
-        const raceModifiers = resolveRaceModifiers(this.race).modifiers;
+        const raceModifiers = resolveRaceModifiers(getRaceForEmpire(this, 1)).modifiers;
         const totalRP = calculateEmpireResearchPoints(this, 1, raceModifiers);
         resolveResearchForEmpire(techState, totalRP, this.rules, raceModifiers);
         this.addEvent("Research resolved.");
@@ -991,7 +980,6 @@ export const Game = {
             details: rounds.join('\n') + `\nFinal: ${result.toUpperCase()}`
         });
         this.logMsg(battleLog, "Combat", "high");
-        ui?.playSound?.(240, 0.2);
 
         if (result === 'attacker') {
             defenderStar.owner = attacker.owner;
@@ -1045,12 +1033,19 @@ export const Game = {
         this.planetKnowledge = this.planetKnowledge || {};
         const planetKnowledge = this.planetKnowledge[1] || {};
         const hiddenFieldCloak = 75;
+        const raceModifiers = resolveRaceModifiers(getRaceForEmpire(this, 1)).modifiers;
         this.stars
             .slice()
             .sort((a, b) => a.id - b.id)
             .forEach(star => {
             if (star.owner === 1) {
-                this.activeScanners.push({ x: star.x, y: star.y, r: 260, owner: 1 });
+                const base = this.rules?.scanners?.planetBaseRange ?? 100;
+                const perLevel = this.rules?.scanners?.planetRangePerLevel ?? 20;
+                const techState = getTechnologyStateForEmpire(this, 1);
+                const elecLevel = techState?.fields?.ELEC?.level ?? 0;
+                const range = base + (perLevel * elecLevel);
+                const finalRange = raceModifiers.noAdvancedScanners ? range * 2 : range;
+                this.activeScanners.push({ x: star.x, y: star.y, r: finalRange, owner: 1 });
             }
         });
         this.fleets
@@ -1254,7 +1249,7 @@ export const Game = {
         return {
             turnCount: this.turnCount,
             rules: this.rules,
-            race: this.race,
+            race: getRaceForEmpire(this, playerId),
             stars: visibleStars,
             fleets: visibleFleets,
             minefields: visibleMinefields,
@@ -1322,7 +1317,7 @@ export const Game = {
         if (!field) {
             return null;
         }
-        const raceModifiers = resolveRaceModifiers(this.race).modifiers;
+        const raceModifiers = resolveRaceModifiers(getRaceForEmpire(this, empireId)).modifiers;
         return {
             level: field.level,
             storedRP: field.storedRP,
@@ -1340,7 +1335,7 @@ export const Game = {
         if (!techState) {
             return;
         }
-        const raceModifiers = resolveRaceModifiers(this.race).modifiers;
+        const raceModifiers = resolveRaceModifiers(getRaceForEmpire(this, empireId)).modifiers;
         const allocationRules = (nextAllocation, fields) => enforceAllocationRules(nextAllocation, fields, raceModifiers);
         techState.allocation = normalizeAllocation(allocation, this.getTechnologyFields(), allocationRules);
     },
@@ -1350,13 +1345,13 @@ export const Game = {
         if (!techState) {
             return;
         }
-        const raceModifiers = resolveRaceModifiers(this.race).modifiers;
+        const raceModifiers = resolveRaceModifiers(getRaceForEmpire(this, empireId)).modifiers;
         const allocationRules = (nextAllocation, fields) => enforceAllocationRules(nextAllocation, fields, raceModifiers);
         techState.allocation = adjustAllocationForField(techState.allocation, this.getTechnologyFields(), fieldId, share, allocationRules);
     },
 
     getEmpireResearchPoints: function(empireId = 1) {
-        const raceModifiers = resolveRaceModifiers(this.race).modifiers;
+        const raceModifiers = resolveRaceModifiers(getRaceForEmpire(this, empireId)).modifiers;
         return calculateEmpireResearchPoints(this, empireId, raceModifiers);
     }
 };

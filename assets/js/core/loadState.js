@@ -304,10 +304,12 @@ export const deserializeUniverseState = (state) => {
             design,
             waypoints: dto.waypoints,
             cargo: dto.cargo,
-            shipStacks: dto.shipStacks
+            shipStacks: dto.shipStacks,
+            warp: dto.warp
         });
         fleet.designId = dto.designId || design.designId;
         fleet.fuel = dto.fuel ?? design.fuel;
+        fleet.warp = Number.isFinite(dto.warp) ? dto.warp : fleet.warp;
         fleet.dest = dto.dest ? { ...dto.dest } : null;
         fleet.waypoints = Array.isArray(dto.waypoints) ? dto.waypoints.map(point => ({ ...point })) : fleet.waypoints;
         fleet.cargo = dto.cargo ? { ...dto.cargo } : fleet.cargo;

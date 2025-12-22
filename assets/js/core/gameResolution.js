@@ -3,6 +3,11 @@ import { dist } from "./utils.js";
 import { getTotalTechLevels } from "./technologyResolver.js";
 import { resolveRaceModifiers } from "./raceTraits.js";
 
+const getRaceForEmpire = (state, empireId) => {
+    const player = state.players?.find(entry => entry.id === empireId);
+    return player?.race || state.race;
+};
+
 const countEmpirePlanets = (state, empireId) => state.stars.filter(star => star.owner === empireId).length;
 const countEmpireShips = (state, empireId) => state.fleets.filter(fleet => fleet.owner === empireId).length;
 const countEmpirePopulation = (state, empireId) => state.stars
@@ -136,6 +141,9 @@ const getFleetCargoMass = (fleet) => {
 };
 
 const getFleetWarpSpeed = (fleet) => {
+    if (Number.isFinite(fleet.warp)) {
+        return Math.max(1, Math.floor(fleet.warp));
+    }
     if (Array.isArray(fleet.shipStacks) && fleet.shipStacks.length) {
         const speeds = fleet.shipStacks
             .map(stack => stack.stats?.speed)
@@ -170,12 +178,12 @@ export const resolveMinefieldLaying = (state) => {
     if (!orders.length) {
         return;
     }
-    const raceModifiers = resolveRaceModifiers(state.race).modifiers;
     orders.forEach(order => {
         const fleet = state.fleets.find(item => item.id === order.fleetId);
         if (!fleet) {
             return;
         }
+        const raceModifiers = resolveRaceModifiers(getRaceForEmpire(state, fleet.owner)).modifiers;
         const mineUnitsToDeploy = Math.min(fleet.mineUnits, order.mineUnitsToDeploy);
         if (mineUnitsToDeploy <= 0) {
             return;
@@ -214,13 +222,13 @@ export const resolveMinefieldSweeping = (state) => {
     if (!orders.length) {
         return;
     }
-    const raceModifiers = resolveRaceModifiers(state.race).modifiers;
     orders.forEach(order => {
         const fleet = state.fleets.find(item => item.id === order.fleetId);
         const minefield = state.minefields.find(field => field.id === order.minefieldId);
         if (!fleet || !minefield) {
             return;
         }
+        const raceModifiers = resolveRaceModifiers(getRaceForEmpire(state, fleet.owner)).modifiers;
         if (dist(fleet, minefield.center) > minefield.radius) {
             return;
         }
@@ -243,13 +251,14 @@ export const resolveMinefieldTransitDamage = (state) => {
         return;
     }
     const destroyed = new Set();
-    const raceModifiers = resolveRaceModifiers(state.race).modifiers;
-    const isSpaceDemolition = state.race?.primaryTrait === "SD";
     movementPaths.forEach(path => {
         const fleet = state.fleets.find(item => item.id === path.fleetId);
         if (!fleet) {
             return;
         }
+        const race = getRaceForEmpire(state, fleet.owner);
+        const raceModifiers = resolveRaceModifiers(race).modifiers;
+        const isSpaceDemolition = race?.primaryTrait === "SD";
         const warpSpeed = getFleetWarpSpeed(fleet);
         state.minefields.forEach(minefield => {
             if (minefield.ownerEmpireId === fleet.owner) {
@@ -272,9 +281,11 @@ export const resolveMinefieldTransitDamage = (state) => {
             }
             const engines = getFleetEngineCount(fleet);
             const baseDamage = (typeRules.damagePerEngine ?? 0) * engines;
+            const ramscoopPenalty = fleet.design?.flags?.includes("ramscoop") ? 1.25 : 1;
             const damage = Math.ceil(baseDamage
                 * (typeRules.damageMultiplier || 1)
-                * (raceModifiers.minefieldDamageMultiplier || 1));
+                * (raceModifiers.minefieldDamageMultiplier || 1)
+                * ramscoopPenalty);
             if (damage <= 0) {
                 if (minefield.type === "speed_trap") {
                     fleet.fuel = 0;
@@ -312,10 +323,11 @@ export const resolveMinefieldTransitDamage = (state) => {
 };
 
 export const resolveMinefieldDecay = (state) => {
-    const raceModifiers = resolveRaceModifiers(state.race).modifiers;
-    const isSpaceDemolition = state.race?.primaryTrait === "SD";
     state.minefields = state.minefields
         .map(field => {
+            const race = getRaceForEmpire(state, field.ownerEmpireId);
+            const raceModifiers = resolveRaceModifiers(race).modifiers;
+            const isSpaceDemolition = race?.primaryTrait === "SD";
             const typeRules = getMinefieldTypeRules(state, field.type);
             const decayRate = isSpaceDemolition
                 ? (field.decayRate ?? typeRules.decayRate ?? 0)
@@ -334,11 +346,6 @@ export const resolveStargateJumps = (state) => {
         return;
     }
     const destroyed = new Set();
-    const raceModifiers = resolveRaceModifiers(state.race).modifiers;
-    if (raceModifiers.noStargates) {
-        return;
-    }
-    const isInterstellarTraveler = state.race?.primaryTrait === "IT";
     orders.forEach(order => {
         const fleet = state.fleets.find(item => item.id === order.fleetId);
         const source = state.stars.find(star => star.id === order.sourcePlanetId);
@@ -346,6 +353,12 @@ export const resolveStargateJumps = (state) => {
         if (!fleet || !source || !destination) {
             return;
         }
+        const race = getRaceForEmpire(state, fleet.owner);
+        const raceModifiers = resolveRaceModifiers(race).modifiers;
+        if (raceModifiers.noStargates) {
+            return;
+        }
+        const isInterstellarTraveler = race?.primaryTrait === "IT";
         if (!source.hasStargate || !destination.hasStargate) {
             return;
         }

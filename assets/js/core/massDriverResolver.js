@@ -126,6 +126,11 @@ const applyPacketTerraforming = (state, star, race) => {
     return true;
 };
 
+const getRaceForEmpire = (state, empireId) => {
+    const player = state.players?.find(entry => entry.id === empireId);
+    return player?.race || state.race;
+};
+
 export const resolveMassDriverPackets = (state) => {
     if (!Array.isArray(state.packets) || state.packets.length === 0) {
         return;
@@ -134,14 +139,14 @@ export const resolveMassDriverPackets = (state) => {
     const defaultCatchRadius = rules.catchRadius ?? 12;
     const remainingPackets = [];
     const destroyed = new Set();
-    const raceModifiers = resolveRaceModifiers(state.race).modifiers;
-    const packetPhysics = Boolean(raceModifiers.packetPhysics);
-    const packetDamageMultiplier = packetPhysics ? 1 / 3 : 1;
-
     state.packets
         .slice()
         .sort((a, b) => a.id - b.id)
         .forEach(packet => {
+            const race = getRaceForEmpire(state, packet.owner);
+            const raceModifiers = resolveRaceModifiers(race).modifiers;
+            const packetPhysics = Boolean(raceModifiers.packetPhysics);
+            const packetDamageMultiplier = packetPhysics ? 1 / 3 : 1;
             packet.payload = normalizePayload(packet.payload);
             const speed = getPacketSpeed(packet, rules);
             const targetStar = state.stars?.find(target => target.id === packet.destId);
@@ -188,15 +193,13 @@ export const resolveMassDriverPackets = (state) => {
             }
 
             if (star && isResourcePacket && star.owner === packet.owner) {
-                const economy = state.economy?.[packet.owner];
-                if (economy) {
-                    economy.mineralStock.i += Math.floor(packet.payload * 0.4);
-                    economy.mineralStock.b += Math.floor(packet.payload * 0.3);
-                    economy.mineralStock.g += Math.floor(packet.payload * 0.3);
-                    economy.minerals = economy.mineralStock.i + economy.mineralStock.b + economy.mineralStock.g;
+                if (star.mins) {
+                    star.mins.i += Math.floor(packet.payload * 0.4);
+                    star.mins.b += Math.floor(packet.payload * 0.3);
+                    star.mins.g += Math.floor(packet.payload * 0.3);
                 }
                 if (packetPhysics) {
-                    applyPacketTerraforming(state, star, state.race);
+                    applyPacketTerraforming(state, star, race);
                 }
                 if (state.turnEvents) {
                     state.turnEvents.push({
@@ -233,7 +236,7 @@ export const resolveMassDriverPackets = (state) => {
                 const outcome = damage > 0 ? applyDamageToStar(star, damage) : { baseDamage: 0, popLoss: 0, mineLoss: 0, factoryLoss: 0 };
                 let terraformed = false;
                 if (packetPhysics) {
-                    terraformed = applyPacketTerraforming(state, star, state.race);
+                    terraformed = applyPacketTerraforming(state, star, race);
                 }
                 if (state.turnEvents) {
                     state.turnEvents.push({

@@ -42,23 +42,26 @@
       "standard": {
         "sweepResistance": 1.0,
         "damageMultiplier": 1.0,
-        "decayRate": 0.05,
-        "safeSpeed": 6,
-        "riskFactor": 0.05
+        "decayRate": 0.01,
+        "safeSpeed": 4,
+        "riskFactor": 0.003,
+        "damagePerEngine": 100
       },
       "heavy": {
         "sweepResistance": 1.5,
         "damageMultiplier": 1.25,
-        "decayRate": 0.03,
-        "safeSpeed": 5,
-        "riskFactor": 0.07
+        "decayRate": 0.01,
+        "safeSpeed": 6,
+        "riskFactor": 0.01,
+        "damagePerEngine": 500
       },
-      "smart": {
+      "speed_trap": {
         "sweepResistance": 2.0,
-        "damageMultiplier": 1.5,
-        "decayRate": 0.02,
-        "safeSpeed": 4,
-        "riskFactor": 0.1
+        "damageMultiplier": 1.0,
+        "decayRate": 0.01,
+        "safeSpeed": 5,
+        "riskFactor": 0.03,
+        "damagePerEngine": 0
       }
     }
   },
@@ -167,6 +170,102 @@
       "cost": 980,
       "tech": { "CONST": 4 },
       "slotLayout": { "engine": 1, "weapon": 4, "utility": 3 }
+    },
+    {
+      "id": "small_freighter",
+      "name": "Small Freighter",
+      "baseMass": 25,
+      "maxMass": 80,
+      "armor": 15,
+      "structure": 40,
+      "baseFuel": 130,
+      "baseCargo": 120,
+      "baseInitiative": 1,
+      "baseSpeed": 4,
+      "baseRange": 140,
+      "speedMassFactor": 140,
+      "fuelRangeFactor": 14,
+      "signature": 6,
+      "cost": 60,
+      "tech": { "CONST": 0 },
+      "slotLayout": { "engine": 1, "utility": 1 }
+    },
+    {
+      "id": "colony_ship",
+      "name": "Colony Ship",
+      "baseMass": 20,
+      "maxMass": 90,
+      "armor": 20,
+      "structure": 50,
+      "baseFuel": 200,
+      "baseCargo": 30,
+      "baseInitiative": 2,
+      "baseSpeed": 4,
+      "baseRange": 150,
+      "speedMassFactor": 150,
+      "fuelRangeFactor": 14,
+      "signature": 6,
+      "cost": 80,
+      "tech": { "CONST": 0 },
+      "slotLayout": { "engine": 1, "utility": 1 }
+    },
+    {
+      "id": "bomber",
+      "name": "Bomber",
+      "baseMass": 28,
+      "maxMass": 110,
+      "armor": 25,
+      "structure": 65,
+      "baseFuel": 120,
+      "baseCargo": 10,
+      "baseInitiative": 3,
+      "baseSpeed": 5,
+      "baseRange": 140,
+      "speedMassFactor": 145,
+      "fuelRangeFactor": 12,
+      "signature": 7,
+      "cost": 90,
+      "tech": { "CONST": 1 },
+      "slotLayout": { "engine": 1, "weapon": 1, "utility": 1 }
+    },
+    {
+      "id": "galleon",
+      "name": "Galleon",
+      "baseMass": 125,
+      "maxMass": 320,
+      "armor": 120,
+      "structure": 200,
+      "baseFuel": 2500,
+      "baseCargo": 1000,
+      "baseInitiative": 1,
+      "baseSpeed": 2,
+      "baseRange": 200,
+      "speedMassFactor": 220,
+      "fuelRangeFactor": 20,
+      "signature": 18,
+      "cost": 400,
+      "tech": { "CONST": 3 },
+      "slotLayout": { "engine": 1, "utility": 6 }
+    },
+    {
+      "id": "starbase",
+      "name": "Starbase",
+      "type": "starbase",
+      "baseMass": 1200,
+      "maxMass": 2000,
+      "armor": 500,
+      "structure": 800,
+      "baseFuel": 500,
+      "baseCargo": 0,
+      "baseInitiative": 0,
+      "baseSpeed": 0,
+      "baseRange": 0,
+      "speedMassFactor": 9999,
+      "fuelRangeFactor": 1,
+      "signature": 20,
+      "cost": 1200,
+      "tech": { "CONST": 0 },
+      "slotLayout": { "weapon": 12, "utility": 8 }
     }
   ]
 }
