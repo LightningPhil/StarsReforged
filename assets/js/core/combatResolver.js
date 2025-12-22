@@ -28,7 +28,9 @@ const normalizeDesignStats = (design, stackStats = null) => {
         torpedoRange,
         bombing: source.bombing ?? design?.bombing ?? Math.floor(torpedoDamage * 0.2),
         gattling: source.gattling ?? design?.gattling ?? 0,
-        sapper: source.sapper ?? design?.sapper ?? 0
+        sapper: source.sapper ?? design?.sapper ?? 0,
+        flags: source.flags ?? design?.flags ?? [],
+        hullId: source.hullId ?? design?.hullId ?? null
     };
 };
 
@@ -41,15 +43,18 @@ const buildStackState = (fleet, stack, modifiers, stackIndex) => {
         armor: Math.max(0, Math.floor(designStats.armor || 0)),
         structure: Math.max(1, Math.floor(designStats.structure || 0))
     };
+    const battlePlan = fleet.battlePlan || stack.battlePlan || {};
     return {
         id: `${fleet.id}-${stackIndex}`,
         fleetId: fleet.id,
         owner: fleet.owner,
         name: fleet.name,
         designId: stack.designId,
+        hullId: designStats.hullId,
         count: Math.max(0, stack.count ?? 0),
         base,
-        current: { ...base },
+        shieldDamage: 0,
+        hullDamage: 0,
         initiative,
         defense: designStats.defense || 0,
         speed: designStats.speed || 0,
@@ -60,51 +65,83 @@ const buildStackState = (fleet, stack, modifiers, stackIndex) => {
         bombing: Math.max(0, Math.floor((designStats.bombing || 0) * (modifiers?.shipDamage ?? 1))),
         gattling: Math.max(0, Math.floor(designStats.gattling || 0)),
         sapper: Math.max(0, Math.min(0.8, designStats.sapper || 0)),
+        flags: Array.isArray(designStats.flags) ? designStats.flags : [],
+        battlePlan: {
+            primary: battlePlan.primary ?? battlePlan.primaryTarget ?? "closest",
+            secondary: battlePlan.secondary ?? battlePlan.secondaryTarget ?? "weakest",
+            tactic: battlePlan.tactic ?? battlePlan.tactics ?? "balanced"
+        },
         destroyed: false,
         originalCount: Math.max(0, stack.count ?? 0)
     };
 };
 
-const applyDamageToShip = (ship, damage, sapper = 0) => {
-    let remaining = damage;
-    const sapperDamage = Math.floor(remaining * sapper);
-    const normalDamage = remaining - sapperDamage;
-    if (ship.shields > 0 && normalDamage > 0) {
-        const absorbed = Math.min(ship.shields, normalDamage);
-        ship.shields -= absorbed;
-        remaining -= absorbed;
+const getHullPerShip = (stack) => Math.max(1, (stack.base.armor || 0) + (stack.base.structure || 0));
+
+const getRemainingTotals = (stack) => {
+    const hullPerShip = getHullPerShip(stack);
+    const totalHull = hullPerShip * stack.count;
+    const totalShields = (stack.base.shields || 0) * stack.count;
+    const remainingHull = Math.max(0, totalHull - stack.hullDamage);
+    const remainingShields = Math.max(0, totalShields - stack.shieldDamage);
+    return {
+        hullPerShip,
+        totalHull,
+        totalShields,
+        remainingHull,
+        remainingShields
+    };
+};
+
+const getCurrentShipStatus = (stack) => {
+    if (stack.count <= 0) {
+        return { count: 0, shields: 0, armor: 0, structure: 0 };
     }
-    remaining -= sapperDamage;
-    if (ship.armor > 0 && remaining > 0) {
-        const absorbed = Math.min(ship.armor, remaining);
-        ship.armor -= absorbed;
-        remaining -= absorbed;
-    }
-    if (ship.structure > 0 && remaining > 0) {
-        const absorbed = Math.min(ship.structure, remaining);
-        ship.structure -= absorbed;
-        remaining -= absorbed;
-    }
-    return remaining;
+    const totals = getRemainingTotals(stack);
+    const hullPerShip = totals.hullPerShip;
+    const currentHull = Math.max(0, totals.remainingHull - hullPerShip * (stack.count - 1));
+    const currentShields = Math.max(0, totals.remainingShields - (stack.base.shields || 0) * (stack.count - 1));
+    const armor = Math.min(stack.base.armor || 0, currentHull);
+    const structure = Math.max(0, currentHull - armor);
+    return {
+        count: stack.count,
+        shields: currentShields,
+        armor,
+        structure
+    };
 };
 
 const applyDamageToStack = (stack, damage, sapper = 0) => {
-    let remaining = damage;
-    let kills = 0;
-    while (remaining > 0 && stack.count > 0) {
-        remaining = applyDamageToShip(stack.current, remaining, sapper);
-        if (stack.current.structure <= 0) {
-            kills += 1;
-            stack.count -= 1;
-            stack.current = { ...stack.base };
-        } else {
-            break;
-        }
+    if (stack.count <= 0 || damage <= 0) {
+        return { kills: 0, remaining: 0 };
     }
+    const totals = getRemainingTotals(stack);
+    let remaining = Math.max(0, damage);
+    const sapperDamage = Math.floor(remaining * sapper);
+    let normalDamage = remaining - sapperDamage;
+    if (totals.remainingShields > 0 && normalDamage > 0) {
+        const absorbed = Math.min(totals.remainingShields, normalDamage);
+        stack.shieldDamage += absorbed;
+        normalDamage -= absorbed;
+    }
+    const hullDamage = sapperDamage + normalDamage;
+    if (hullDamage > 0) {
+        stack.hullDamage += hullDamage;
+    }
+    const previousCount = stack.count;
+    const totalHull = totals.hullPerShip * previousCount;
+    const remainingHull = Math.max(0, totalHull - stack.hullDamage);
+    const newCount = remainingHull <= 0 ? 0 : Math.ceil(remainingHull / totals.hullPerShip);
+    const kills = previousCount - newCount;
+    stack.count = newCount;
     if (stack.count <= 0) {
         stack.destroyed = true;
     }
-    return { kills, remaining };
+    const maxShield = (stack.base.shields || 0) * stack.count;
+    if (stack.shieldDamage > maxShield) {
+        stack.shieldDamage = maxShield;
+    }
+    return { kills, remaining: 0 };
 };
 
 const getPairKey = (a, b) => (a.id < b.id ? `${a.id}|${b.id}` : `${b.id}|${a.id}`);
@@ -115,23 +152,105 @@ const setRangeBetween = (ranges, a, b, range) => {
     ranges.set(getPairKey(a, b), clamp(range, 0, 4));
 };
 
+const getTargetMetric = (attacker, target, ranges) => {
+    const totals = getRemainingTotals(target);
+    return {
+        range: getRangeBetween(ranges, attacker, target),
+        count: target.count,
+        defense: target.defense,
+        damage: target.beamDamage + target.torpedoDamage,
+        durability: totals.remainingHull + totals.remainingShields,
+        isStarbase: target.designId === "starbase",
+        hullId: target.hullId
+    };
+};
+
+const sortTargets = (attacker, plan, ranges) => (a, b) => {
+    const metricA = getTargetMetric(attacker, a, ranges);
+    const metricB = getTargetMetric(attacker, b, ranges);
+    const compare = (key, direction = "desc") => {
+        if (metricA[key] !== metricB[key]) {
+            const diff = metricA[key] - metricB[key];
+            return direction === "asc" ? diff : -diff;
+        }
+        return 0;
+    };
+    const compareByKey = (key) => {
+        switch (key) {
+            case "closest":
+                return compare("range", "asc");
+            case "farthest":
+                return compare("range", "desc");
+            case "largest":
+                return compare("count", "desc");
+            case "smallest":
+                return compare("count", "asc");
+            case "highestDefense":
+                return compare("defense", "desc");
+            case "lowestDefense":
+                return compare("defense", "asc");
+            case "highestDamage":
+                return compare("damage", "desc");
+            case "lowestDamage":
+                return compare("damage", "asc");
+            case "strongest":
+                return compare("durability", "desc");
+            case "weakest":
+                return compare("durability", "asc");
+            default:
+                return 0;
+        }
+    };
+    const primary = compareByKey(plan.primary);
+    if (primary !== 0) {
+        return primary;
+    }
+    const secondary = compareByKey(plan.secondary);
+    if (secondary !== 0) {
+        return secondary;
+    }
+    if (metricA.range !== metricB.range) {
+        return metricA.range - metricB.range;
+    }
+    return a.id.localeCompare(b.id);
+};
+
 const selectTarget = (attacker, combatants, ranges) => {
     const enemies = combatants.filter(item => !item.destroyed && item.owner !== attacker.owner && item.count > 0);
     if (!enemies.length) {
         return null;
     }
-    return enemies
-        .slice()
-        .sort((a, b) => {
-            const rangeDiff = getRangeBetween(ranges, attacker, a) - getRangeBetween(ranges, attacker, b);
-            if (rangeDiff !== 0) {
-                return rangeDiff;
-            }
-            return a.id.localeCompare(b.id);
-        })[0];
+    const plan = attacker.battlePlan || { primary: "closest", secondary: "weakest", tactic: "balanced" };
+    if (plan.primary === "starbase") {
+        const starbases = enemies.filter(target => target.designId === "starbase");
+        if (starbases.length) {
+            return starbases.slice().sort(sortTargets(attacker, plan, ranges))[0];
+        }
+    }
+    if (plan.primary === "capital") {
+        const capitalTargets = enemies.filter(target => target.hullId === "battleship");
+        if (capitalTargets.length) {
+            return capitalTargets.slice().sort(sortTargets(attacker, plan, ranges))[0];
+        }
+    }
+    return enemies.slice().sort(sortTargets(attacker, plan, ranges))[0];
 };
 
-const getPreferredRange = (stack) => {
+const getPreferredRange = (stack, currentRange) => {
+    const tactic = stack.battlePlan?.tactic || "balanced";
+    const maxRange = Math.max(stack.beamRange, stack.torpedoRange, 1);
+    if (tactic === "hold") {
+        return currentRange;
+    }
+    if (tactic === "close") {
+        return 0;
+    }
+    if (tactic === "retreat") {
+        return 4;
+    }
+    if (tactic === "kite") {
+        return maxRange;
+    }
     if (stack.torpedoDamage > stack.beamDamage) {
         return stack.torpedoRange || 2;
     }
@@ -158,7 +277,7 @@ const resolveMovementPhase = (combatants, ranges, frame) => {
                 return;
             }
             const currentRange = getRangeBetween(ranges, stack, target);
-            const desiredRange = getPreferredRange(stack);
+            const desiredRange = getPreferredRange(stack, currentRange);
             const moveBands = getMovementBands(stack);
             if (moveBands <= 0 || currentRange === desiredRange) {
                 return;
@@ -183,6 +302,22 @@ const resolveMovementPhase = (combatants, ranges, frame) => {
         });
 };
 
+const getBeamRangeMultiplier = (range, beamRange) => {
+    if (beamRange <= 1) {
+        return 1;
+    }
+    const decay = (range - 1) / beamRange;
+    return clamp(1 - decay * 0.5, 0.25, 1);
+};
+
+const getTorpedoAccuracy = (attacker, target, range) => {
+    const base = 0.7;
+    const rangePenalty = Math.max(0, range - 1) * 0.1;
+    const defensePenalty = (target.defense || 0) * 0.01;
+    const initiativeBonus = (attacker.initiative || 0) * 0.01;
+    return clamp(base + initiativeBonus - defensePenalty - rangePenalty, 0.15, 0.95);
+};
+
 const resolveFiringPhase = (combatants, ranges, frame) => {
     combatants
         .filter(stack => !stack.destroyed && stack.count > 0)
@@ -195,7 +330,8 @@ const resolveFiringPhase = (combatants, ranges, frame) => {
             const range = getRangeBetween(ranges, attacker, target);
             const attacks = [];
             if (attacker.beamDamage > 0 && range <= attacker.beamRange) {
-                attacks.push({ type: "beam", damage: attacker.beamDamage });
+                const decay = getBeamRangeMultiplier(range, attacker.beamRange);
+                attacks.push({ type: "beam", damage: Math.floor(attacker.beamDamage * decay) });
             }
             if (attacker.torpedoDamage > 0 && range <= attacker.torpedoRange) {
                 attacks.push({ type: "torpedo", damage: attacker.torpedoDamage });
@@ -217,6 +353,12 @@ const resolveFiringPhase = (combatants, ranges, frame) => {
                 const perShot = Math.max(1, Math.floor(effectiveDamage / shots));
                 let totalKills = 0;
                 for (let shot = 0; shot < shots; shot += 1) {
+                    if (attack.type === "torpedo") {
+                        const accuracy = getTorpedoAccuracy(attacker, target, range);
+                        if (Math.random() > accuracy) {
+                            continue;
+                        }
+                    }
                     const outcome = applyDamageToStack(target, perShot, attacker.sapper);
                     totalKills += outcome.kills;
                     if (target.destroyed || target.count <= 0) {
@@ -224,6 +366,7 @@ const resolveFiringPhase = (combatants, ranges, frame) => {
                     }
                 }
                 if (frame) {
+                    const targetStatus = getCurrentShipStatus(target);
                     frame.events.push({
                         type: "attack",
                         weapon: attack.type,
@@ -233,10 +376,10 @@ const resolveFiringPhase = (combatants, ranges, frame) => {
                         damage: effectiveDamage,
                         kills: totalKills,
                         targetStatus: {
-                            count: target.count,
-                            shields: target.current.shields,
-                            armor: target.current.armor,
-                            structure: target.current.structure
+                            count: targetStatus.count,
+                            shields: targetStatus.shields,
+                            armor: targetStatus.armor,
+                            structure: targetStatus.structure
                         }
                     });
                 }
@@ -255,17 +398,15 @@ const buildStarbaseStack = (star) => {
         owner: star.owner,
         name: star.def.base.name || "Starbase",
         designId: "starbase",
+        hullId: "starbase",
         count: 1,
         base: {
             shields: Math.floor(baseHp * 0.1),
             armor: Math.floor(baseHp * 0.2),
             structure: Math.floor(baseHp * 0.7)
         },
-        current: {
-            shields: Math.floor(baseHp * 0.1),
-            armor: Math.floor(baseHp * 0.2),
-            structure: Math.floor(baseHp * 0.7)
-        },
+        shieldDamage: 0,
+        hullDamage: 0,
         initiative: 1,
         defense: 20,
         speed: 0,
@@ -276,24 +417,54 @@ const buildStarbaseStack = (star) => {
         bombing: 0,
         gattling: 0,
         sapper: 0,
+        flags: [],
+        battlePlan: { primary: "closest", secondary: "weakest", tactic: "hold" },
         destroyed: false,
         originalCount: 1
     };
+};
+
+const getBombingProfile = (stack) => {
+    const flags = new Set((stack.flags || []).map(flag => String(flag).toLowerCase()));
+    const isSmart = flags.has("smartbomb") || flags.has("smartbombs") || flags.has("smart");
+    const isNeutron = flags.has("neutronbomb") || flags.has("neutronbombs") || flags.has("neutron");
+    return { isSmart, isNeutron };
 };
 
 const resolveBombardment = (star, attackers, frames) => {
     if (!star || !star.owner || star.def?.base) {
         return null;
     }
-    const totalBombing = attackers.reduce((sum, stack) => sum + (stack.bombing || 0) * stack.count, 0);
+    const totals = attackers.reduce((sum, stack) => {
+        const profile = getBombingProfile(stack);
+        const bombing = (stack.bombing || 0) * stack.count;
+        if (profile.isSmart) {
+            sum.smart += bombing;
+        } else if (profile.isNeutron) {
+            sum.neutron += bombing;
+        } else {
+            sum.standard += bombing;
+        }
+        return sum;
+    }, { standard: 0, smart: 0, neutron: 0 });
+    const totalBombing = totals.standard + totals.smart + totals.neutron;
     if (totalBombing <= 0) {
         return null;
     }
-    const popLoss = Math.min(star.pop, Math.floor(totalBombing * 0.6));
-    const mineLoss = Math.min(star.def.mines || 0, Math.floor(totalBombing / 5));
-    const factoryLoss = Math.min(star.factories || 0, Math.floor(totalBombing / 6));
+    const smartDefenseDamage = Math.floor(totals.smart * 1.2);
+    const standardDefenseDamage = Math.floor(totals.standard * 0.4);
+    const defenseDamage = smartDefenseDamage + standardDefenseDamage;
+    const defensePool = (star.def.mines || 0) + (star.def.facts || 0);
+    const actualDefenseLoss = Math.min(defensePool, Math.floor(defenseDamage));
+    const mineLoss = Math.min(star.def.mines || 0, Math.floor(actualDefenseLoss * 0.6));
+    const factLoss = Math.min(star.def.facts || 0, actualDefenseLoss - mineLoss);
+    const standardPopLoss = Math.floor(totals.standard * 0.6);
+    const neutronPopLoss = Math.floor(totals.neutron * 1.4);
+    const popLoss = Math.min(star.pop, standardPopLoss + neutronPopLoss);
+    const factoryLoss = Math.min(star.factories || 0, Math.floor(totals.standard * 0.3 + totals.smart * 0.2));
     star.pop = Math.max(0, star.pop - popLoss);
     star.def.mines = Math.max(0, (star.def.mines || 0) - mineLoss);
+    star.def.facts = Math.max(0, (star.def.facts || 0) - factLoss);
     star.factories = Math.max(0, (star.factories || 0) - factoryLoss);
     if (frames) {
         frames.push({
@@ -302,13 +473,24 @@ const resolveBombardment = (star, attackers, frames) => {
             events: [{
                 type: "bombing",
                 totalBombing,
+                smartBombing: totals.smart,
+                neutronBombing: totals.neutron,
                 popLoss,
                 mineLoss,
-                factoryLoss
+                factoryLoss,
+                defenseFactLoss: factLoss
             }]
         });
     }
-    return { totalBombing, popLoss, mineLoss, factoryLoss };
+    return {
+        totalBombing,
+        popLoss,
+        mineLoss,
+        factoryLoss,
+        defenseFactLoss: factLoss,
+        smartBombing: totals.smart,
+        neutronBombing: totals.neutron
+    };
 };
 
 const resolveInvasion = (star, attackers, frames) => {
@@ -326,7 +508,8 @@ const resolveInvasion = (star, attackers, frames) => {
     if (invasionForce <= 0) {
         return null;
     }
-    const defenderForce = star.pop;
+    const defenseBonus = (star.def.mines || 0) + (star.def.facts || 0);
+    const defenderForce = star.pop + Math.floor(defenseBonus * 0.5);
     if (invasionForce <= defenderForce) {
         if (frames) {
             frames.push({
@@ -345,7 +528,7 @@ const resolveInvasion = (star, attackers, frames) => {
     const winningStack = troopStacks[0];
     const winnerId = winningStack.owner;
     star.owner = winnerId;
-    star.pop = Math.max(1, Math.floor(invasionForce * 0.3));
+    star.pop = Math.max(1, Math.floor(invasionForce * 0.25));
     troopStacks.forEach(stack => {
         if (stack.fleetRef?.cargo) {
             stack.fleetRef.cargo.pop = 0;
@@ -439,12 +622,21 @@ export const CombatResolver = {
             if (activeOwners.size <= 1) {
                 break;
             }
-            const movementFrame = { round, phase: "movement", events: [] };
-            resolveMovementPhase(combatants, ranges, movementFrame);
-            frames.push(movementFrame);
+            for (let phase = 1; phase <= 3; phase += 1) {
+                const movementFrame = { round, phase: "movement", movementPhase: phase, events: [] };
+                resolveMovementPhase(combatants, ranges, movementFrame);
+                frames.push(movementFrame);
+            }
             const fireFrame = { round, phase: "fire", events: [] };
             resolveFiringPhase(combatants, ranges, fireFrame);
             frames.push(fireFrame);
+            combatants.forEach(stack => {
+                if (stack.destroyed || stack.count <= 0) {
+                    return;
+                }
+                const regen = Math.floor((stack.base.shields || 0) * stack.count * 0.25);
+                stack.shieldDamage = Math.max(0, stack.shieldDamage - regen);
+            });
         }
 
         const fleetStatus = new Map();
@@ -485,13 +677,24 @@ export const CombatResolver = {
                     speed: stack.speed
                 }
             }));
-            const totalArmor = remainingStacks.reduce((sum, stack) => sum + stack.base.armor * stack.count, 0);
-            const totalStructure = remainingStacks.reduce((sum, stack) => sum + stack.base.structure * stack.count, 0);
-            const totalShields = remainingStacks.reduce((sum, stack) => sum + stack.base.shields * stack.count, 0);
-            fleet.armor = totalArmor;
-            fleet.structure = totalStructure;
-            fleet.shields = totalShields;
-            fleet.hp = totalArmor + totalStructure + totalShields;
+            const totals = remainingStacks.reduce((sum, stack) => {
+                const hullPerShip = getHullPerShip(stack);
+                const totalArmor = (stack.base.armor || 0) * stack.count;
+                const totalStructure = (stack.base.structure || 0) * stack.count;
+                const totalShield = (stack.base.shields || 0) * stack.count;
+                const hullDamage = Math.min(stack.hullDamage, hullPerShip * stack.count);
+                const armorRemaining = Math.max(0, totalArmor - hullDamage);
+                const structureRemaining = Math.max(0, totalStructure - Math.max(0, hullDamage - totalArmor));
+                const shieldRemaining = Math.max(0, totalShield - (stack.shieldDamage || 0));
+                sum.armor += armorRemaining;
+                sum.structure += structureRemaining;
+                sum.shields += shieldRemaining;
+                return sum;
+            }, { armor: 0, structure: 0, shields: 0 });
+            fleet.armor = totals.armor;
+            fleet.structure = totals.structure;
+            fleet.shields = totals.shields;
+            fleet.hp = totals.armor + totals.structure + totals.shields;
             survivingFleets.push(fleet);
         });
 
@@ -512,6 +715,10 @@ export const CombatResolver = {
             && stack.fleetId !== `starbase-${star.id}`
         ));
 
+        if (starbaseStack && starbaseStack.destroyed && star?.def?.base) {
+            star.def.base = null;
+        }
+
         const bombingOutcome = resolveBombardment(star, orbitingAttackers, frames);
         const invasionOutcome = resolveInvasion(star, orbitingAttackers, frames);
 
@@ -523,7 +730,7 @@ export const CombatResolver = {
 
         const summary = {
             winner,
-            rounds: frames.filter(frame => typeof frame.round === "number").length / 2,
+            rounds: frames.filter(frame => frame.phase === "fire").length,
             bombing: bombingOutcome,
             invasion: invasionOutcome
         };
