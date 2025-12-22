@@ -132,6 +132,7 @@ export const Game = {
     shipDesigns: {},
     minefieldIntel: {},
     wormholeIntel: {},
+    planetKnowledge: {},
     messages: [],
     battles: [],
     sectorScans: [],
@@ -1015,6 +1016,9 @@ export const Game = {
     updateVisibility: function() {
         this.activeScanners = [];
         this.sectorScans = this.sectorScans.filter(scan => scan.expires >= this.turnCount);
+        this.planetKnowledge = this.planetKnowledge || {};
+        const planetKnowledge = this.planetKnowledge[1] || {};
+        const hiddenFieldCloak = 75;
         this.stars
             .slice()
             .sort((a, b) => a.id - b.id)
@@ -1039,17 +1043,30 @@ export const Game = {
             .sort((a, b) => a.id - b.id)
             .forEach(star => {
             const intelState = getIntelState(this.activeScanners, star);
+            const knownEntry = planetKnowledge[star.id];
             star.intelState = intelState;
             if (intelState !== "none") {
+                star.updateSnapshot();
+                planetKnowledge[star.id] = {
+                    id: star.id,
+                    name: star.name,
+                    x: star.x,
+                    y: star.y,
+                    snapshot: star.snapshot ? { ...star.snapshot } : null,
+                    turn_seen: this.turnCount
+                };
                 star.visible = true;
                 star.known = true;
-                if (intelState !== "visible") {
-                    star.updateSnapshot();
-                }
-            } else if (star.known) {
+                star.lastSeenTurn = this.turnCount;
+            } else {
+                const restored = knownEntry?.snapshot ?? null;
                 star.visible = false;
+                star.known = Boolean(knownEntry);
+                star.snapshot = restored;
+                star.lastSeenTurn = knownEntry?.turn_seen ?? null;
             }
         });
+        this.planetKnowledge[1] = planetKnowledge;
 
         this.fleets.forEach(fleet => {
             if (fleet.owner === 1) {
@@ -1070,7 +1087,7 @@ export const Game = {
             if (minefield.visibility === "all" || minefield.ownerEmpireId === 1) {
                 intelState = "penetrated";
             } else {
-                intelState = getIntelState(this.activeScanners, minefield.center);
+                intelState = getIntelState(this.activeScanners, minefield.center, hiddenFieldCloak);
             }
             if (intelState === "none") {
                 return;
@@ -1096,7 +1113,7 @@ export const Game = {
             this.wormholeIntel[1] = [];
         }
         this.wormholes.forEach(wormhole => {
-            const intelState = getIntelState(this.activeScanners, wormhole.entry || wormhole);
+            const intelState = getIntelState(this.activeScanners, wormhole.entry || wormhole, hiddenFieldCloak);
             if (intelState === "none") {
                 return;
             }
