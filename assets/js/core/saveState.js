@@ -197,6 +197,39 @@ export const serializePlayerState = (gameState, playerId) => {
     const visibleStars = starVisibility
         ? gameState.stars.filter(star => starVisibility[star.id] && starVisibility[star.id] !== "none")
         : gameState.stars.filter(star => star.owner === playerId);
+    const visibleStarIds = new Set(visibleStars.map(star => star.id));
+    const knownStars = Object.values(planetKnowledge)
+        .filter(entry => Number.isFinite(entry?.id) && !visibleStarIds.has(entry.id))
+        .map(entry => {
+            const snapshot = entry.snapshot ? { ...entry.snapshot } : null;
+            const snapshotData = entry.snapshot || {};
+            return {
+                id: entry.id,
+                name: entry.name ?? `Star#${entry.id}`,
+                x: entry.x ?? 0,
+                y: entry.y ?? 0,
+                owner: snapshotData.owner ?? null,
+                pop: snapshotData.pop ?? 0,
+                mins: snapshotData.mins ? { ...snapshotData.mins } : { i: 0, b: 0, g: 0 },
+                concentration: snapshotData.concentration ? { ...snapshotData.concentration } : null,
+                environment: snapshotData.environment ? { ...snapshotData.environment } : null,
+                habitability: snapshotData.habitability ?? null,
+                deathRate: snapshotData.deathRate ?? null,
+                factories: snapshotData.factories ?? null,
+                mines: snapshotData.mines ?? null,
+                def: snapshotData.def ? { ...snapshotData.def } : { mines: 0, facts: 0, base: null },
+                queue: null,
+                autoBuild: snapshotData.autoBuild ? { ...snapshotData.autoBuild } : null,
+                terraforming: snapshotData.terraforming ? { ...snapshotData.terraforming } : null,
+                visible: false,
+                known: true,
+                snapshot,
+                hasStargate: snapshotData.hasStargate ?? false,
+                stargateMassLimit: snapshotData.stargateMassLimit ?? 0,
+                stargateRange: snapshotData.stargateRange ?? 0,
+                stargateTechLevel: snapshotData.stargateTechLevel ?? 0
+            };
+        });
     const visibleFleets = fleetVisibility
         ? gameState.fleets.filter(fleet => fleetVisibility[fleet.id] && fleetVisibility[fleet.id] !== "none")
         : gameState.fleets.filter(fleet => fleet.owner === playerId);
@@ -223,7 +256,7 @@ export const serializePlayerState = (gameState, playerId) => {
             visible: true,
             known: true,
             snapshot: planetKnowledge[star.id]?.snapshot ?? star.snapshot
-        })),
+        })).concat(knownStars.map(serializeStar)),
         fleets: visibleFleets.map(serializeFleet),
         packets: visiblePackets.map(serializePacket),
         orders: gameState.orders ? gameState.orders.filter(order => order.issuerId === playerId).map(serializeOrder) : [],

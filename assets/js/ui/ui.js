@@ -167,7 +167,7 @@ export const UI = {
         let closest = null;
         let closestDist = Infinity;
         Game.stars
-            .filter(star => star.visible || star.known)
+            .filter(star => star.visible || star.known || Boolean(Game.planetKnowledge?.[1]?.[star.id]))
             .forEach(star => {
                 const distance = dist({ x, y }, star);
                 if (distance <= threshold && distance < closestDist) {
@@ -205,8 +205,10 @@ export const UI = {
             reject("Fleet not positioned at source stargate.");
             return;
         }
-        const sourceInfo = source.visible ? source : source.snapshot;
-        const destinationInfo = destination.visible ? destination : destination.snapshot;
+        const sourceIntel = Game.planetKnowledge?.[1]?.[source.id];
+        const sourceInfo = source.visible ? source : (source.snapshot ?? sourceIntel?.snapshot);
+        const destinationIntel = Game.planetKnowledge?.[1]?.[destination.id];
+        const destinationInfo = destination.visible ? destination : (destination.snapshot ?? destinationIntel?.snapshot);
         if (!sourceInfo?.hasStargate) {
             reject("Source stargate offline.");
             return;
@@ -215,7 +217,7 @@ export const UI = {
             reject("Destination stargate offline.");
             return;
         }
-        if (!destination.visible && !destination.known) {
+        if (!destination.visible && !destination.known && !destinationIntel) {
             reject("Destination not on record.");
             return;
         }
@@ -666,7 +668,8 @@ export const UI = {
 
         if (Game.selection.type === 'star') {
             const star = Game.stars[Game.selection.id];
-            const info = star.visible ? star : star.snapshot;
+            const intelEntry = Game.planetKnowledge?.[1]?.[star.id];
+            const info = star.visible ? star : (star.snapshot ?? intelEntry?.snapshot);
             if (!info) {
                 h = `<div style="color:#666;">Signal lost.</div>`;
                 p.innerHTML = h;
@@ -760,7 +763,7 @@ export const UI = {
             const sourceInfo = sourceStar ? (sourceStar.visible ? sourceStar : sourceStar.snapshot) : null;
             if (sourceStar && sourceInfo?.hasStargate) {
                 const destinations = Game.stars.filter(star => {
-                    if (!(star.visible || star.known)) {
+                    if (!(star.visible || star.known || Game.planetKnowledge?.[1]?.[star.id])) {
                         return false;
                     }
                     if (star.id === sourceStar.id) {
