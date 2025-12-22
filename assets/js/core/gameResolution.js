@@ -1,6 +1,7 @@
 import { Minefield } from "../models/minefield.js";
 import { dist } from "./utils.js";
 import { getTotalTechLevels } from "./technologyResolver.js";
+import { resolveRaceModifiers } from "./raceTraits.js";
 
 const countEmpirePlanets = (state, empireId) => state.stars.filter(star => star.owner === empireId).length;
 const countEmpireShips = (state, empireId) => state.fleets.filter(fleet => fleet.owner === empireId).length;
@@ -119,6 +120,7 @@ export const resolveMinefieldLaying = (state) => {
     if (!orders.length) {
         return;
     }
+    const raceModifiers = resolveRaceModifiers(state.race).modifiers;
     orders.forEach(order => {
         const fleet = state.fleets.find(item => item.id === order.fleetId);
         if (!fleet) {
@@ -129,18 +131,19 @@ export const resolveMinefieldLaying = (state) => {
             return;
         }
         const typeRules = getMinefieldTypeRules(state, order.type);
-        const radius = Math.sqrt(mineUnitsToDeploy / Math.PI);
+        const strength = mineUnitsToDeploy * (raceModifiers.minefieldStrengthMultiplier || 1);
+        const radius = Math.sqrt(strength / Math.PI);
         const minefieldId = state.minefields.reduce((max, field) => Math.max(max, field.id), 0) + 1;
         const newField = new Minefield({
             id: minefieldId,
             ownerEmpireId: fleet.owner,
             center: { x: fleet.x, y: fleet.y },
             radius,
-            strength: mineUnitsToDeploy,
+            strength,
             type: order.type,
             turnCreated: state.turnCount,
-            sweepResistance: typeRules.sweepResistance,
-            decayRate: typeRules.decayRate,
+            sweepResistance: typeRules.sweepResistance * (raceModifiers.minefieldSweepResistanceMultiplier || 1),
+            decayRate: typeRules.decayRate * (raceModifiers.minefieldDecayMultiplier || 1),
             visibility: "owner"
         });
         const existing = state.minefields.find(field => field.ownerEmpireId === fleet.owner
@@ -161,6 +164,7 @@ export const resolveMinefieldSweeping = (state) => {
     if (!orders.length) {
         return;
     }
+    const raceModifiers = resolveRaceModifiers(state.race).modifiers;
     orders.forEach(order => {
         const fleet = state.fleets.find(item => item.id === order.fleetId);
         const minefield = state.minefields.find(field => field.id === order.minefieldId);
@@ -170,7 +174,8 @@ export const resolveMinefieldSweeping = (state) => {
         if (dist(fleet, minefield.center) > minefield.radius) {
             return;
         }
-        const swept = fleet.mineSweepingStrength / (minefield.sweepResistance || 1);
+        const swept = (fleet.mineSweepingStrength * (raceModifiers.minefieldSweepMultiplier || 1))
+            / (minefield.sweepResistance || 1);
         minefield.strength = Math.max(0, minefield.strength - swept);
         minefield.radius = minefield.strength > 0 ? Math.sqrt(minefield.strength / Math.PI) : 0;
         rememberMinefield(state, fleet.owner, minefield, false);
@@ -184,6 +189,7 @@ export const resolveMinefieldTransitDamage = (state) => {
         return;
     }
     const destroyed = new Set();
+    const raceModifiers = resolveRaceModifiers(state.race).modifiers;
     movementPaths.forEach(path => {
         const fleet = state.fleets.find(item => item.id === path.fleetId);
         if (!fleet) {
@@ -198,7 +204,9 @@ export const resolveMinefieldTransitDamage = (state) => {
                 return;
             }
             const typeRules = getMinefieldTypeRules(state, minefield.type);
-            const damage = Math.ceil(minefield.density * lengthInside * (typeRules.damageMultiplier || 1));
+            const damage = Math.ceil(minefield.density * lengthInside
+                * (typeRules.damageMultiplier || 1)
+                * (raceModifiers.minefieldDamageMultiplier || 1));
             if (damage <= 0) {
                 return;
             }
@@ -223,11 +231,12 @@ export const resolveMinefieldTransitDamage = (state) => {
 };
 
 export const resolveMinefieldDecay = (state) => {
+    const raceModifiers = resolveRaceModifiers(state.race).modifiers;
     state.minefields = state.minefields
         .map(field => {
             const typeRules = getMinefieldTypeRules(state, field.type);
             const decayRate = field.decayRate ?? typeRules.decayRate ?? 0;
-            field.strength *= (1 - decayRate);
+            field.strength *= (1 - (decayRate * (raceModifiers.minefieldDecayMultiplier || 1)));
             field.radius = field.strength > 0 ? Math.sqrt(field.strength / Math.PI) : 0;
             return field;
         })
@@ -240,6 +249,7 @@ export const resolveStargateJumps = (state) => {
         return;
     }
     const destroyed = new Set();
+    const raceModifiers = resolveRaceModifiers(state.race).modifiers;
     orders.forEach(order => {
         const fleet = state.fleets.find(item => item.id === order.fleetId);
         const source = state.stars.find(star => star.id === order.sourcePlanetId);
@@ -251,7 +261,8 @@ export const resolveStargateJumps = (state) => {
             return;
         }
         const distance = Math.hypot(destination.x - source.x, destination.y - source.y);
-        const maxRange = Math.min(source.stargateRange || 0, destination.stargateRange || 0);
+        const maxRange = Math.min(source.stargateRange || 0, destination.stargateRange || 0)
+            * (raceModifiers.stargateRangeMultiplier || 1);
         if (distance > maxRange) {
             return;
         }
@@ -268,10 +279,12 @@ export const resolveStargateJumps = (state) => {
                 destinationPlanetId: destination.id
             });
         }
-        const massLimit = Math.min(source.stargateMassLimit || 0, destination.stargateMassLimit || 0) || 1;
+        const massLimit = (Math.min(source.stargateMassLimit || 0, destination.stargateMassLimit || 0) || 1)
+            * (raceModifiers.stargateMassMultiplier || 1);
         const techDelta = Math.abs((source.stargateTechLevel || 0) - (destination.stargateTechLevel || 0));
         const safetyPenalty = techDelta * 0.05;
-        const misjumpChance = Math.max(0, (fleet.mass / massLimit) - 1) + safetyPenalty;
+        const misjumpChance = (Math.max(0, (fleet.mass / massLimit) - 1) + safetyPenalty)
+            * (raceModifiers.stargateMisjumpMultiplier || 1);
         if (misjumpChance > 0) {
             const roll = state.rng.nextInt(1000) / 1000;
             if (roll < misjumpChance) {

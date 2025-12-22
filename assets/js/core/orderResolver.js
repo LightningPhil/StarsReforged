@@ -311,19 +311,22 @@ const resolveStargateJump = (state, order) => {
         logOrderError(state, `Stargate missing for fleet ${fleet.id}.`);
         return;
     }
+    const raceModifiers = resolveRaceModifiers(state.race).modifiers;
     const dx = destination.x - source.x;
     const dy = destination.y - source.y;
     const distance = Math.hypot(dx, dy);
-    const maxRange = Math.min(source.stargateRange || 0, destination.stargateRange || 0);
+    const maxRange = Math.min(source.stargateRange || 0, destination.stargateRange || 0)
+        * (raceModifiers.stargateRangeMultiplier || 1);
     if (distance > maxRange) {
         logOrderError(state, `Destination out of range for fleet ${fleet.id}.`);
         return;
     }
-    if (!Number.isFinite(source.stargateMassLimit) || source.stargateMassLimit <= 0) {
+    const massLimitMultiplier = raceModifiers.stargateMassMultiplier || 1;
+    if (!Number.isFinite(source.stargateMassLimit) || source.stargateMassLimit * massLimitMultiplier <= 0) {
         logOrderError(state, `Stargate mass limit unavailable for fleet ${fleet.id}.`);
         return;
     }
-    if (!Number.isFinite(destination.stargateMassLimit) || destination.stargateMassLimit <= 0) {
+    if (!Number.isFinite(destination.stargateMassLimit) || destination.stargateMassLimit * massLimitMultiplier <= 0) {
         logOrderError(state, `Destination stargate mass limit unavailable for fleet ${fleet.id}.`);
         return;
     }

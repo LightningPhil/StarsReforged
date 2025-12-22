@@ -81,7 +81,7 @@ const collectFlags = (components) => {
     return Array.from(flags);
 };
 
-export const calculateDesignStats = (hull, components, techState = null) => {
+export const calculateDesignStats = (hull, components, techState = null, raceModifiers = null) => {
     const adjustedComponents = components.map(component => getAdjustedComponent(component, techState));
     const mass = hull.baseMass + adjustedComponents.reduce((sum, component) => sum + component.adjustedMass, 0);
     const armor = hull.armor + sumStat(components, "armor");
@@ -115,9 +115,9 @@ export const calculateDesignStats = (hull, components, techState = null) => {
     const mineLayingCapacity = sumStat(components, "mineLayingCapacity") || mineCapacity;
     const mineSweepingStrength = sumStat(components, "mineSweep");
     const signature = (hull.signature || Math.ceil(hull.baseMass / 20)) + Math.ceil(mass / 120);
-    const scanner = resolveScannerStrength(hull, components);
+    const scanner = resolveScannerStrength(hull, components) * (raceModifiers?.shipScannerMultiplier || 1);
     const camo = Math.max(0, Math.floor((hull.camo || 0) + sumStat(components, "camo")));
-    const cloak = Math.max(0, Math.min(95, Math.floor(camo)));
+    const cloak = Math.max(0, Math.min(95, Math.floor(camo + (raceModifiers?.shipCloakBonus || 0))));
     const beamRange = Math.max(0, maxStat(components, "beamRange"));
     const torpedoRange = Math.max(0, maxStat(components, "torpedoRange"));
     const bombing = Math.max(0, Math.floor(sumStat(components, "bombing") + torpedoDamage * 0.2));
@@ -133,7 +133,7 @@ export const calculateDesignStats = (hull, components, techState = null) => {
         speed,
         attack,
         defense,
-        range,
+        range: Math.max(1, Math.floor(range * (raceModifiers?.shipRangeMultiplier || 1))),
         fuel,
         cargo,
         shields,
@@ -270,7 +270,10 @@ export const validateDesign = (hull, components, techState = null, race = null) 
     errors.push(...validateSlotLayout(hull, components));
     errors.push(...validateTechAvailability(hull, components, techState));
 
-    const stats = calculateDesignStats(hull, components, techState);
+    const { modifiers, errors: raceErrors } = resolveRaceModifiers(race);
+    errors.push(...raceErrors);
+
+    const stats = calculateDesignStats(hull, components, techState, modifiers);
     if (stats.mass > hull.maxMass) {
         errors.push(`Mass ${stats.mass} exceeds hull limit ${hull.maxMass}.`);
     }
@@ -278,8 +281,6 @@ export const validateDesign = (hull, components, techState = null, race = null) 
         errors.push("Insufficient power output.");
     }
 
-    const { modifiers, errors: raceErrors } = resolveRaceModifiers(race);
-    errors.push(...raceErrors);
     errors.push(...validateRaceAvailability(hull, components, modifiers, race));
 
     return { valid: errors.length === 0, errors, stats };

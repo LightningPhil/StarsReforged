@@ -30,7 +30,10 @@ const normalizeStarEconomy = (star) => {
     }
 };
 
-const isAlternateReality = (race) => {
+const isAlternateReality = (race, raceModifiers) => {
+    if (raceModifiers?.alternateReality) {
+        return true;
+    }
     const label = race?.type?.toLowerCase?.() || "";
     return label.includes("alternate reality") || label === "ar";
 };
@@ -49,7 +52,7 @@ const getMineralRatios = (queue) => {
     return { ...DEFAULT_MINERAL_RATIO };
 };
 
-const ensureMineralsForProgress = (stock, ratios, progress) => {
+const ensureMineralsForProgress = (stock, ratios, progress, alchemyRate = 0) => {
     const required = {
         i: Math.ceil(progress * ratios.i),
         b: Math.ceil(progress * ratios.b),
@@ -70,12 +73,15 @@ const ensureMineralsForProgress = (stock, ratios, progress) => {
             if (adjusted[donor] <= 0) {
                 return;
             }
-            const convertible = Math.min(adjusted[donor], deficit * MINERAL_ALCHEMY_RATE);
-            const gained = Math.floor(convertible / MINERAL_ALCHEMY_RATE);
+            if (alchemyRate <= 0) {
+                return;
+            }
+            const convertible = Math.min(adjusted[donor], deficit * alchemyRate);
+            const gained = Math.floor(convertible / alchemyRate);
             if (gained <= 0) {
                 return;
             }
-            adjusted[donor] -= gained * MINERAL_ALCHEMY_RATE;
+            adjusted[donor] -= gained * alchemyRate;
             adjusted[type] += gained;
             deficit -= gained;
         });
@@ -84,11 +90,12 @@ const ensureMineralsForProgress = (stock, ratios, progress) => {
     return { hasEnough, required, adjusted };
 };
 
-const applyTerraforming = (star, techModifiers) => {
+const applyTerraforming = (star, techModifiers, raceModifiers) => {
     if (!star.terraforming?.active || !star.terraforming?.target) {
         return;
     }
-    const rate = Math.max(1, Math.floor((techModifiers?.habitabilityTolerance || 0) * 10) + 1);
+    const baseRate = Math.max(1, Math.floor((techModifiers?.habitabilityTolerance || 0) * 10) + 1);
+    const rate = Math.max(1, Math.round(baseRate * (raceModifiers?.terraformingRateMultiplier || 1)));
     ["grav", "temp", "rad"].forEach(axis => {
         const target = star.terraforming.target?.[axis];
         if (!Number.isFinite(target)) {
@@ -104,7 +111,7 @@ const applyTerraforming = (star, techModifiers) => {
     }
 };
 
-const resolveQueue = ({ state, star, productionPoints }) => {
+const resolveQueue = ({ state, star, productionPoints, raceModifiers }) => {
     const economy = state.economy?.[star.owner];
     if (!economy) {
         return;
@@ -152,7 +159,7 @@ const resolveQueue = ({ state, star, productionPoints }) => {
     let progress = desiredProgress;
     let result = null;
     while (progress > 0) {
-        result = ensureMineralsForProgress(economy.mineralStock, ratios, progress);
+        result = ensureMineralsForProgress(economy.mineralStock, ratios, progress, raceModifiers?.mineralAlchemyRate || 0);
         if (result.hasEnough) {
             break;
         }
@@ -195,18 +202,21 @@ export const resolvePlanetEconomy = (state) => {
     let taxTotal = 0;
     let industrialOutput = 0;
     const raceModifiers = resolveRaceModifiers(state.race).modifiers;
-    const alternateReality = isAlternateReality(state.race);
+    const alternateReality = isAlternateReality(state.race, raceModifiers);
     state.stars
         .filter(star => star.owner)
         .sort((a, b) => a.id - b.id)
         .forEach(star => {
             normalizeStarEconomy(star);
             const techModifiers = getTechnologyModifiers(getTechnologyStateForEmpire(state, star.owner));
-            applyTerraforming(star, techModifiers);
+            applyTerraforming(star, techModifiers, raceModifiers);
             const habitabilityScore = getHabitabilityScore({ star, race: state.race, techModifiers });
             star.habitability = Math.round(habitabilityScore * 100);
             star.deathRate = habitabilityScore >= 0.5 ? 0 : Math.round((0.5 - habitabilityScore) * 200);
-            const maxPopulation = Math.max(2500, Math.floor(BASE_MAX_POP * (0.2 + habitabilityScore * 0.8)));
+            const maxPopulation = Math.max(
+                2500,
+                Math.floor(BASE_MAX_POP * (0.2 + habitabilityScore * 0.8) * (raceModifiers.maxPopulationMultiplier || 1))
+            );
             if (habitabilityScore < 0.5) {
                 const loss = Math.ceil(star.pop * (star.deathRate / 100));
                 star.pop = Math.max(0, star.pop - loss);
@@ -231,9 +241,10 @@ export const resolvePlanetEconomy = (state) => {
             }
             economy.credits += resources;
 
-            const iGain = Math.floor((star.mines * star.concentration.i) / MINE_OUTPUT_DIVISOR);
-            const bGain = Math.floor((star.mines * star.concentration.b) / MINE_OUTPUT_DIVISOR);
-            const gGain = Math.floor((star.mines * star.concentration.g) / MINE_OUTPUT_DIVISOR);
+            const miningMultiplier = raceModifiers.miningRateMultiplier || 1;
+            const iGain = Math.floor((star.mines * star.concentration.i * miningMultiplier) / MINE_OUTPUT_DIVISOR);
+            const bGain = Math.floor((star.mines * star.concentration.b * miningMultiplier) / MINE_OUTPUT_DIVISOR);
+            const gGain = Math.floor((star.mines * star.concentration.g * miningMultiplier) / MINE_OUTPUT_DIVISOR);
 
             economy.mineralStock.i += iGain;
             economy.mineralStock.b += bGain;
@@ -244,7 +255,7 @@ export const resolvePlanetEconomy = (state) => {
             star.concentration.b = Math.max(0, star.concentration.b - Math.ceil(bGain * depletionScale));
             star.concentration.g = Math.max(0, star.concentration.g - Math.ceil(gGain * depletionScale));
 
-            resolveQueue({ state, star, productionPoints });
+            resolveQueue({ state, star, productionPoints, raceModifiers });
 
             star.def.mines = star.mines;
             star.def.facts = star.factories;
