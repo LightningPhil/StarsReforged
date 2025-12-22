@@ -56,6 +56,7 @@ export const resolvePopulationGrowth = ({ star, race, techModifiers, maxPopulati
     const habitability = getHabitabilityScore({ star, race, techModifiers });
     const growthBase = 1.02;
     const growthMultiplier = (techModifiers?.populationGrowth || 1) * (modifiers.populationGrowth || 1);
+    const adjustedMaxPop = Math.max(1, Math.floor(maxPopulation * (modifiers.maxPopulationMultiplier || 1)));
     const grown = Math.floor(star.pop * growthBase * growthMultiplier * habitability);
-    return Math.min(maxPopulation, grown);
+    return Math.min(adjustedMaxPop, grown);
 };

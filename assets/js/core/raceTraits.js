@@ -4,108 +4,259 @@ const RACE_POINT_LIMITS = {
 };
 
 const TRAIT_CATALOG = {
-    adaptive_biology: {
-        id: "adaptive_biology",
-        name: "Adaptive Biology",
+    HE: {
+        id: "HE",
+        name: "Hyper-Expansion",
         type: "primary",
         cost: 4,
-        exclusiveGroup: "physiology",
+        exclusiveGroup: "primary",
         modifiers: {
-            populationGrowth: 1.08,
-            habitabilityWidthBonus: 0.2
+            populationGrowth: 1.2,
+            maxPopulationMultiplier: 1.15,
+            startingTechLevels: { BIOT: 1 }
         }
     },
-    cybernetic_industry: {
-        id: "cybernetic_industry",
-        name: "Cybernetic Industry",
+    SS: {
+        id: "SS",
+        name: "Super Stealth",
         type: "primary",
         cost: 4,
-        exclusiveGroup: "physiology",
+        exclusiveGroup: "primary",
+        modifiers: {
+            shipCloakBonus: 15,
+            shipScannerMultiplier: 1.1,
+            startingTechLevels: { ELEC: 1 }
+        }
+    },
+    WM: {
+        id: "WM",
+        name: "War Monger",
+        type: "primary",
+        cost: 4,
+        exclusiveGroup: "primary",
         modifiers: {
             shipCostMultiplier: 0.92,
+            researchCostMultiplier: 1.05,
+            startingTechLevels: { WEAP: 1 }
+        }
+    },
+    CA: {
+        id: "CA",
+        name: "Claim Adjuster",
+        type: "primary",
+        cost: 4,
+        exclusiveGroup: "primary",
+        modifiers: {
+            habitabilityWidthBonus: 0.1,
+            terraformingRateMultiplier: 1.5,
+            startingTechLevels: { TERR: 1 }
+        }
+    },
+    IS: {
+        id: "IS",
+        name: "Inner Strength",
+        type: "primary",
+        cost: 4,
+        exclusiveGroup: "primary",
+        modifiers: {
+            populationGrowth: 1.05,
+            maxPopulationMultiplier: 1.2,
+            researchPointMultiplier: 1.05
+        }
+    },
+    SD: {
+        id: "SD",
+        name: "Space Demolition",
+        type: "primary",
+        cost: 4,
+        exclusiveGroup: "primary",
+        modifiers: {
+            minefieldStrengthMultiplier: 1.3,
+            minefieldDamageMultiplier: 1.2,
+            minefieldDecayMultiplier: 0.85,
+            minefieldSweepResistanceMultiplier: 1.2,
+            startingTechLevels: { WEAP: 1 }
+        }
+    },
+    PP: {
+        id: "PP",
+        name: "Packet Physics",
+        type: "primary",
+        cost: 4,
+        exclusiveGroup: "primary",
+        modifiers: {
+            shipRangeMultiplier: 1.05,
+            startingTechLevels: { PROP: 1 }
+        }
+    },
+    IT: {
+        id: "IT",
+        name: "Interstellar Traveler",
+        type: "primary",
+        cost: 4,
+        exclusiveGroup: "primary",
+        modifiers: {
+            shipRangeMultiplier: 1.1,
+            stargateRangeMultiplier: 1.5,
+            stargateMassMultiplier: 1.5,
+            stargateMisjumpMultiplier: 0.6,
+            startingTechLevels: { PROP: 1 }
+        }
+    },
+    JOAT: {
+        id: "JOAT",
+        name: "Jack of All Trades",
+        type: "primary",
+        cost: 4,
+        exclusiveGroup: "primary",
+        modifiers: {
+            startingTechLevels: { ALL: 1 },
             researchCostMultiplier: 1.05,
             researchPointMultiplier: 1.05
         }
     },
-    psionic_innovators: {
-        id: "psionic_innovators",
-        name: "Psionic Innovators",
+    AR: {
+        id: "AR",
+        name: "Alternate Reality",
         type: "primary",
         cost: 4,
-        exclusiveGroup: "physiology",
+        exclusiveGroup: "primary",
         modifiers: {
-            researchCostMultiplier: 0.9,
-            researchFieldBonus: { ELEC: 0.08, ENER: 0.05 },
-            allocationMin: { ELEC: 0.08 }
+            alternateReality: true,
+            populationGrowth: 0.2,
+            maxPopulationMultiplier: 0.7,
+            researchCostMultiplier: 1.05
         }
     },
-    rapid_breeding: {
-        id: "rapid_breeding",
-        name: "Rapid Breeding",
+    IFE: {
+        id: "IFE",
+        name: "Improved Fuel Efficiency",
         type: "lesser",
         cost: 2,
-        exclusiveGroup: "growth",
+        exclusiveGroup: "engine",
         modifiers: {
-            populationGrowth: 1.05
+            shipRangeMultiplier: 1.2
         }
     },
-    starwrights: {
-        id: "starwrights",
-        name: "Starwrights",
+    NRSE: {
+        id: "NRSE",
+        name: "No Ram Scoop Engines",
         type: "lesser",
         cost: 2,
-        exclusiveGroup: "industry",
+        exclusiveGroup: "engine",
+        modifiers: {
+            shipRangeMultiplier: 0.9
+        }
+    },
+    CE: {
+        id: "CE",
+        name: "Cheap Engines",
+        type: "lesser",
+        cost: 2,
         modifiers: {
             shipCostMultiplier: 0.95
         }
     },
-    data_sages: {
-        id: "data_sages",
-        name: "Data Sages",
+    MA: {
+        id: "MA",
+        name: "Mineral Alchemy",
         type: "lesser",
         cost: 2,
-        exclusiveGroup: "research",
+        modifiers: {
+            mineralAlchemyRate: 2
+        }
+    },
+    NAS: {
+        id: "NAS",
+        name: "No Advanced Scanners",
+        type: "lesser",
+        cost: 2,
+        modifiers: {
+            restrictedComponents: ["scanner_array"]
+        }
+    },
+    RS: {
+        id: "RS",
+        name: "Regenerating Shields",
+        type: "lesser",
+        cost: 2,
+        modifiers: {
+            shipCostMultiplier: 1.02
+        }
+    },
+    GR: {
+        id: "GR",
+        name: "Generalized Research",
+        type: "lesser",
+        cost: 2,
+        modifiers: {
+            researchFieldCostMultiplier: {
+                WEAP: 1,
+                PROP: 1,
+                CONST: 1,
+                ELEC: 1,
+                ENER: 1,
+                BIOT: 1,
+                TERR: 1
+            }
+        }
+    },
+    UR: {
+        id: "UR",
+        name: "Ultimate Recycling",
+        type: "lesser",
+        cost: 2,
+        modifiers: {
+            miningRateMultiplier: 1.1
+        }
+    },
+    BET: {
+        id: "BET",
+        name: "Bleeding Edge Technology",
+        type: "lesser",
+        cost: 2,
         modifiers: {
             researchCostMultiplier: 0.95,
-            researchFieldBonus: { BIOT: 0.05 }
+            researchPointMultiplier: 0.95
         }
     },
-    rad_immune: {
-        id: "rad_immune",
-        name: "Rad-Immune",
-        type: "lesser",
-        cost: 3,
-        exclusiveGroup: "environment",
-        modifiers: {
-            habitabilityImmunity: { rad: true }
-        }
-    },
-    grav_resilience: {
-        id: "grav_resilience",
-        name: "Gravity Resilience",
+    LSP: {
+        id: "LSP",
+        name: "Low Starting Population",
         type: "lesser",
         cost: 2,
-        exclusiveGroup: "environment",
         modifiers: {
-            habitabilityWidthBonus: 0.1
+            maxPopulationMultiplier: 0.85
         }
     },
-    compact_shipyards: {
-        id: "compact_shipyards",
-        name: "Compact Shipyards",
+    ISB: {
+        id: "ISB",
+        name: "Improved Starbases",
         type: "lesser",
         cost: 2,
-        exclusiveGroup: "industry",
         modifiers: {
-            restrictedHulls: ["bb"],
-            shipCostMultiplier: 0.9
+            shipCostMultiplier: 0.98
+        }
+    },
+    TT: {
+        id: "TT",
+        name: "Total Terraforming",
+        type: "lesser",
+        cost: 2,
+        modifiers: {
+            habitabilityWidthBonus: 0.15,
+            terraformingRateMultiplier: 1.5
         }
     }
 };
 
 const buildBaseModifiers = () => ({
     populationGrowth: 1,
+    maxPopulationMultiplier: 1,
     shipCostMultiplier: 1,
+    shipRangeMultiplier: 1,
+    shipCloakBonus: 0,
+    shipScannerMultiplier: 1,
     researchCostMultiplier: 1,
     researchPointMultiplier: 1,
     habitabilityWidthBonus: 0,
@@ -114,7 +265,21 @@ const buildBaseModifiers = () => ({
     restrictedComponents: [],
     allocationMin: {},
     allocationMax: {},
-    researchFieldBonus: {}
+    researchFieldBonus: {},
+    researchFieldCostMultiplier: {},
+    startingTechLevels: {},
+    miningRateMultiplier: 1,
+    mineralAlchemyRate: 0,
+    terraformingRateMultiplier: 1,
+    minefieldStrengthMultiplier: 1,
+    minefieldDamageMultiplier: 1,
+    minefieldDecayMultiplier: 1,
+    minefieldSweepMultiplier: 1,
+    minefieldSweepResistanceMultiplier: 1,
+    stargateRangeMultiplier: 1,
+    stargateMassMultiplier: 1,
+    stargateMisjumpMultiplier: 1,
+    alternateReality: false
 });
 
 const mergeModifierLists = (target, additions) => {
@@ -145,13 +310,43 @@ const mergeFieldBonuses = (target, updates) => {
     });
 };
 
+const mergeFieldMultipliers = (target, updates) => {
+    Object.entries(updates || {}).forEach(([field, multiplier]) => {
+        if (!Number.isFinite(multiplier)) {
+            return;
+        }
+        target[field] = (target[field] || 1) * multiplier;
+    });
+};
+
+const mergeStartingTechLevels = (target, updates) => {
+    Object.entries(updates || {}).forEach(([field, bonus]) => {
+        if (!Number.isFinite(bonus)) {
+            return;
+        }
+        target[field] = (target[field] || 0) + bonus;
+    });
+};
+
 const applyTraitModifiers = (modifiers, trait) => {
     const effects = trait.modifiers || {};
     if (Number.isFinite(effects.populationGrowth)) {
         modifiers.populationGrowth *= effects.populationGrowth;
     }
+    if (Number.isFinite(effects.maxPopulationMultiplier)) {
+        modifiers.maxPopulationMultiplier *= effects.maxPopulationMultiplier;
+    }
     if (Number.isFinite(effects.shipCostMultiplier)) {
         modifiers.shipCostMultiplier *= effects.shipCostMultiplier;
+    }
+    if (Number.isFinite(effects.shipRangeMultiplier)) {
+        modifiers.shipRangeMultiplier *= effects.shipRangeMultiplier;
+    }
+    if (Number.isFinite(effects.shipCloakBonus)) {
+        modifiers.shipCloakBonus += effects.shipCloakBonus;
+    }
+    if (Number.isFinite(effects.shipScannerMultiplier)) {
+        modifiers.shipScannerMultiplier *= effects.shipScannerMultiplier;
     }
     if (Number.isFinite(effects.researchCostMultiplier)) {
         modifiers.researchCostMultiplier *= effects.researchCostMultiplier;
@@ -178,6 +373,44 @@ const applyTraitModifiers = (modifiers, trait) => {
     mergeAllocationBounds(modifiers.allocationMin, effects.allocationMin, Math.max);
     mergeAllocationBounds(modifiers.allocationMax, effects.allocationMax, Math.min);
     mergeFieldBonuses(modifiers.researchFieldBonus, effects.researchFieldBonus);
+    mergeFieldMultipliers(modifiers.researchFieldCostMultiplier, effects.researchFieldCostMultiplier);
+    mergeStartingTechLevels(modifiers.startingTechLevels, effects.startingTechLevels);
+    if (Number.isFinite(effects.miningRateMultiplier)) {
+        modifiers.miningRateMultiplier *= effects.miningRateMultiplier;
+    }
+    if (Number.isFinite(effects.mineralAlchemyRate)) {
+        modifiers.mineralAlchemyRate = Math.max(modifiers.mineralAlchemyRate, effects.mineralAlchemyRate);
+    }
+    if (Number.isFinite(effects.terraformingRateMultiplier)) {
+        modifiers.terraformingRateMultiplier *= effects.terraformingRateMultiplier;
+    }
+    if (Number.isFinite(effects.minefieldStrengthMultiplier)) {
+        modifiers.minefieldStrengthMultiplier *= effects.minefieldStrengthMultiplier;
+    }
+    if (Number.isFinite(effects.minefieldDamageMultiplier)) {
+        modifiers.minefieldDamageMultiplier *= effects.minefieldDamageMultiplier;
+    }
+    if (Number.isFinite(effects.minefieldDecayMultiplier)) {
+        modifiers.minefieldDecayMultiplier *= effects.minefieldDecayMultiplier;
+    }
+    if (Number.isFinite(effects.minefieldSweepMultiplier)) {
+        modifiers.minefieldSweepMultiplier *= effects.minefieldSweepMultiplier;
+    }
+    if (Number.isFinite(effects.minefieldSweepResistanceMultiplier)) {
+        modifiers.minefieldSweepResistanceMultiplier *= effects.minefieldSweepResistanceMultiplier;
+    }
+    if (Number.isFinite(effects.stargateRangeMultiplier)) {
+        modifiers.stargateRangeMultiplier *= effects.stargateRangeMultiplier;
+    }
+    if (Number.isFinite(effects.stargateMassMultiplier)) {
+        modifiers.stargateMassMultiplier *= effects.stargateMassMultiplier;
+    }
+    if (Number.isFinite(effects.stargateMisjumpMultiplier)) {
+        modifiers.stargateMisjumpMultiplier *= effects.stargateMisjumpMultiplier;
+    }
+    if (typeof effects.alternateReality === "boolean") {
+        modifiers.alternateReality = modifiers.alternateReality || effects.alternateReality;
+    }
 };
 
 const normalizeTraitList = (traits) => Array.from(new Set((Array.isArray(traits) ? traits : []).filter(Boolean)));

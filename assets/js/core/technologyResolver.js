@@ -82,16 +82,29 @@ export const adjustAllocationForField = (allocation, fields, fieldId, share, all
     return updated;
 };
 
-export const createTechnologyState = (fields, allocation = DEFAULT_ALLOCATION) => ({
-    fields: buildFieldMap(fields),
-    allocation: normalizeAllocation(allocation, fields)
-});
+export const createTechnologyState = (fields, allocation = DEFAULT_ALLOCATION, raceModifiers = null) => {
+    const techState = {
+        fields: buildFieldMap(fields),
+        allocation: normalizeAllocation(allocation, fields)
+    };
+    if (raceModifiers?.startingTechLevels) {
+        const globalBonus = raceModifiers.startingTechLevels.ALL || 0;
+        Object.values(techState.fields).forEach(field => {
+            const bonus = raceModifiers.startingTechLevels[field.id] || 0;
+            field.level = Math.max(1, field.level + globalBonus + bonus);
+        });
+    }
+    return techState;
+};
 
-export const getRpToNextLevel = (level, rules, raceModifiers = {}) => {
+export const getRpToNextLevel = (level, rules, raceModifiers = {}, fieldId = null) => {
     const baseCost = rules?.research?.baseCost ?? 100;
     const exponent = rules?.research?.costExponent ?? 1.5;
     const raceMultiplier = Number.isFinite(raceModifiers?.researchCostMultiplier) ? raceModifiers.researchCostMultiplier : 1;
-    return Math.floor(baseCost * Math.pow(level, exponent) * raceMultiplier);
+    const fieldMultiplier = fieldId && Number.isFinite(raceModifiers?.researchFieldCostMultiplier?.[fieldId])
+        ? raceModifiers.researchFieldCostMultiplier[fieldId]
+        : 1;
+    return Math.floor(baseCost * Math.pow(level, exponent) * raceMultiplier * fieldMultiplier);
 };
 
 export const calculateEmpireResearchPoints = (state, empireId, raceModifiers = {}) => {
@@ -112,11 +125,11 @@ export const resolveResearchForEmpire = (techState, totalRP, rules, raceModifier
         const share = allocations[field.id] ?? 0;
         const fieldBonus = raceModifiers?.researchFieldBonus?.[field.id] || 0;
         field.storedRP += totalRP * share * (1 + fieldBonus);
-        let threshold = getRpToNextLevel(field.level, rules, raceModifiers);
+        let threshold = getRpToNextLevel(field.level, rules, raceModifiers, field.id);
         while (field.storedRP >= threshold && threshold > 0) {
             field.storedRP -= threshold;
             field.level += 1;
-            threshold = getRpToNextLevel(field.level, rules, raceModifiers);
+            threshold = getRpToNextLevel(field.level, rules, raceModifiers, field.id);
         }
     });
 };

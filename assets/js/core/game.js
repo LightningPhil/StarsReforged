@@ -150,8 +150,8 @@ export const Game = {
         temp: '-80° - 140°',
         growth: '+17%',
         mining: 'Adaptive',
-        primaryTrait: "adaptive_biology",
-        lesserTraits: ["rapid_breeding", "starwrights"],
+        primaryTrait: "HE",
+        lesserTraits: ["IFE", "MA"],
         tolerance: {
             grav: { center: 50, width: 35, immune: false },
             temp: { center: 55, width: 40, immune: false },
@@ -270,20 +270,21 @@ export const Game = {
     setupPlayers: function() {
         const aiPlayers = this.aiConfig?.aiPlayers || [2];
         const techFields = this.rules?.technologyFields || [];
+        const raceModifiers = resolveRaceModifiers(this.race).modifiers;
         this.players = [
             {
                 id: 1,
                 type: "human",
                 status: "active",
                 eliminatedAtTurn: null,
-                technology: createTechnologyState(techFields)
+                technology: createTechnologyState(techFields, undefined, raceModifiers)
             },
             ...aiPlayers.map(id => ({
                 id,
                 type: "ai",
                 status: "active",
                 eliminatedAtTurn: null,
-                technology: createTechnologyState(techFields)
+                technology: createTechnologyState(techFields, undefined, raceModifiers)
             }))
         ];
 
@@ -1163,7 +1164,7 @@ export const Game = {
         return {
             level: field.level,
             storedRP: field.storedRP,
-            rpToNextLevel: getRpToNextLevel(field.level, this.rules, raceModifiers)
+            rpToNextLevel: getRpToNextLevel(field.level, this.rules, raceModifiers, field.id)
         };
     },
 
