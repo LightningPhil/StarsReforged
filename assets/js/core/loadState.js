@@ -343,6 +343,7 @@ export const deserializeUniverseState = (state) => {
         destId: dto.destId,
         type: dto.type,
         speed: dto.speed,
+        driverRating: dto.driverRating,
         decayRate: dto.decayRate,
         catchRadius: dto.catchRadius,
         damageMultiplier: dto.damageMultiplier

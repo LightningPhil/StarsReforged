@@ -71,6 +71,7 @@ const serializePacket = (packet) => ({
     destId: packet.destId,
     type: packet.type,
     speed: packet.speed,
+    driverRating: packet.driverRating,
     decayRate: packet.decayRate,
     catchRadius: packet.catchRadius,
     damageMultiplier: packet.damageMultiplier

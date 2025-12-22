@@ -44,6 +44,16 @@
       "smart": { "sweepResistance": 2.0, "damageMultiplier": 1.5, "decayRate": 0.02 }
     }
   },
+  "massDriver": {
+    "speed": 9,
+    "driverRating": 9,
+    "catchRadius": 12,
+    "decayRates": {
+      "safe": 0.1,
+      "risky": 0.25,
+      "extreme": 0.5
+    }
+  },
   "hulls": [
     {
       "id": "scout",
