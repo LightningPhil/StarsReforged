@@ -8,7 +8,8 @@
 </head>
 <body class="crt">
 
-    <header>
+    <!-- HEADER (Visible in Game) -->
+    <header id="game-header" class="ui-hidden">
         <div style="font-size: 20px; color: var(--c-cyan); letter-spacing: 2px; text-shadow: 0 0 10px var(--c-cyan-dim);">STARS <span style="font-size:10px; opacity:0.7">REFORGED</span></div>
         <div style="display:flex;">
             <div class="res-ticker">Y: <span id="g-year" style="color:#fff">2400</span></div>
@@ -18,7 +19,8 @@
         </div>
     </header>
 
-    <nav>
+    <!-- NAV (Visible in Game) -->
+    <nav id="game-nav" class="ui-hidden">
         <button class="icon-btn active" onclick="UI.setScreen('map')" title="Galaxy Map">M</button>
         <button class="icon-btn" onclick="UI.setScreen('empire')" title="Empire Overview">E</button>
         <button class="icon-btn" onclick="UI.setScreen('research')" title="Research Lab">R</button>
@@ -27,23 +29,60 @@
         <button class="icon-btn" onclick="UI.setScreen('comms')" title="Diplomacy/Logs">C</button>
     </nav>
 
+    <!-- MAIN VIEWPORT -->
     <div id="main-view" class="crt">
-        <canvas id="galaxy-canvas"></canvas>
+        <!-- CANVAS (Visible in Game) -->
+        <canvas id="galaxy-canvas" class="ui-hidden"></canvas>
         <div class="grain"></div>
         <div id="minefield-tooltip" class="minefield-tooltip"></div>
 
-        <!-- EMPIRE SCREEN -->
+        <!-- === NEW: MAIN MENU === -->
+        <div id="screen-menu" class="screen-overlay active" style="display:flex; flex-direction:column; align-items:center; justify-content:center;">
+            <h1 style="font-size: 48px; color:var(--c-cyan); text-shadow: 0 0 20px var(--c-cyan);">STARS // REFORGED</h1>
+            <div style="width: 300px; margin-top: 40px;">
+                <button class="action" onclick="UI.showRaceSetup()" style="font-size: 18px; padding: 15px;">NEW GAME</button>
+                <button class="action" onclick="UI.loadGame()" style="margin-top: 20px; font-size: 18px; padding: 15px;">LOAD GAME</button>
+            </div>
+        </div>
+
+        <!-- === NEW: RACE SETUP === -->
+        <div id="screen-setup" class="screen-overlay">
+            <h1 style="color:var(--c-cyan)">FACTION CONFIGURATION</h1>
+            <div class="grid-layout design-grid">
+                <div class="card">
+                    <h3>Identity</h3>
+                    <div class="stat-row"><span>Race Name:</span> <input type="text" id="setup-name" value="The Ashen Arc" style="width: 150px;"></div>
+                    <div class="stat-row" style="margin-top:10px;"><span>AI Opponents:</span> <input type="number" id="setup-ai-count" min="1" max="5" value="1" style="width: 60px;"></div>
+                    <div style="margin-top: 20px; border-top: 1px solid #333; padding-top: 10px;">
+                        <h3>Points Budget: <span id="setup-points" style="color:var(--c-good)">10</span>/10</h3>
+                        <p style="font-size: 12px; color: #889;">Select 1 Primary Trait and up to 3 Lesser Traits.</p>
+                    </div>
+                    <button class="action" onclick="UI.startGame()" style="margin-top: 30px; border-color: var(--c-good); color: var(--c-good);">INITIALIZE SIMULATION</button>
+                    <button class="action" onclick="UI.showMainMenu()" style="margin-top: 10px;">BACK</button>
+                </div>
+                <div class="card">
+                    <h3>Primary Trait (Cost: 4)</h3>
+                    <div id="setup-primary-traits" style="max-height: 400px; overflow-y: auto;"></div>
+                </div>
+                <div class="card">
+                    <h3>Lesser Traits (Cost: 2)</h3>
+                    <div id="setup-lesser-traits" style="max-height: 400px; overflow-y: auto;"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- GAME SCREENS (Existing) -->
         <div id="screen-empire" class="screen-overlay">
+            <!-- (Keep existing content) -->
             <h1 style="color:var(--c-cyan)">IMPERIAL DASHBOARD</h1>
             <div class="grid-layout">
                 <div class="card">
                     <h3>Race Traits</h3>
                     <div class="stat-row"><span>Type:</span> <span class="val" id="race-type">Synthetic Nomads</span></div>
-                    <div class="stat-row"><span>Grav Tol:</span> <span class="val" id="race-grav">0.3g - 4.2g</span></div>
-                    <div class="stat-row"><span>Temp Tol:</span> <span class="val" id="race-temp">-80° - 140°</span></div>
-                    <div class="stat-row"><span>Growth:</span> <span class="val" id="race-growth">+17%</span></div>
-                    <div class="stat-row"><span>Mining:</span> <span class="val" id="race-mining">Adaptive</span></div>
+                    <div class="stat-row"><span>Primary:</span> <span class="val" id="race-primary">-</span></div>
+                    <div class="stat-row"><span>Bonuses:</span> <span class="val" id="race-bonuses">-</span></div>
                 </div>
+                <!-- Keep Economy/Known/Diplomacy Cards -->
                 <div class="card">
                     <h3>Economy</h3>
                     <div class="stat-row"><span>Total Pop:</span> <span class="val" id="emp-pop">0</span></div>
@@ -64,8 +103,8 @@
             </div>
         </div>
 
-        <!-- RESEARCH SCREEN -->
         <div id="screen-research" class="screen-overlay">
+            <!-- (Keep existing content) -->
             <h1 style="color:var(--c-cyan)">R&D LABS</h1>
             <div class="card" style="margin-bottom:20px;">
                 <div class="stat-row"><span>Current Focus:</span> <span class="val" id="tech-focus">Energy</span></div>
@@ -75,14 +114,14 @@
             <div class="grid-layout" id="tech-grid"></div>
         </div>
 
-        <!-- FLEET SCREEN -->
         <div id="screen-fleets" class="screen-overlay">
+            <!-- (Keep existing content) -->
             <h1 style="color:var(--c-cyan)">FLEET MANIFEST</h1>
             <div class="grid-layout" id="fleet-grid"></div>
         </div>
 
-        <!-- COMMS SCREEN -->
         <div id="screen-comms" class="screen-overlay">
+            <!-- (Keep existing content) -->
             <h1 style="color:var(--c-cyan)">COMMS & LOGS</h1>
             <div class="grid-layout comms-grid">
                 <div class="card">
@@ -112,8 +151,8 @@
             </div>
         </div>
 
-        <!-- DESIGN SCREEN -->
         <div id="screen-design" class="screen-overlay">
+            <!-- (Keep existing content) -->
             <h1 style="color:var(--c-cyan)">SHIP DESIGN WORKSHOP</h1>
             <div class="grid-layout design-grid">
                 <div class="card">
@@ -151,13 +190,14 @@
         </div>
     </div>
 
-    <!-- CONTEXT SIDEBAR -->
-    <aside id="ctx-panel">
+    <!-- CONTEXT SIDEBAR (Visible in Game) -->
+    <aside id="ctx-panel" class="ui-hidden">
         <div id="ctx-none" style="text-align:center; margin-top:50px; color:#555;">NO SIGNAL<br>L-Click Select<br>R-Click Move</div>
         <div id="ctx-content" style="display:none"></div>
     </aside>
 
-    <footer>
+    <!-- FOOTER (Visible in Game) -->
+    <footer id="game-footer" class="ui-hidden">
         <button id="turn-btn" class="action" style="width:auto; padding:0 30px; height:32px;" onclick="UI.submitTurn()">EXECUTE TURN</button>
         <div class="log-strip">
             <div id="footer-log">READY.</div>

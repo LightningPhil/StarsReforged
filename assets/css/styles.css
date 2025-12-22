@@ -343,3 +343,32 @@ textarea {
     width: 100%;
     min-height: 120px;
 }
+
+.ui-hidden {
+    display: none !important;
+}
+
+.trait-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px;
+    border-bottom: 1px solid #223;
+    font-size: 13px;
+    cursor: pointer;
+}
+.trait-item:hover {
+    background: rgba(255, 255, 255, 0.05);
+}
+.trait-item input {
+    margin-right: 10px;
+    cursor: pointer;
+}
+.trait-cost {
+    color: var(--c-warn);
+}
+.trait-desc {
+    font-size: 11px;
+    color: #889;
+    margin-top: 2px;
+}
