@@ -198,29 +198,30 @@ export const Game = {
         this.rules = configs.rules;
         this.aiConfig = configs.ai;
         this.aiDifficulty = configs.ai.defaultDifficulty || "normal";
-        const loadedState = await loadGameStateFromFiles({
-            playerId: 1,
-            rules: this.rules,
-            aiConfig: this.aiConfig
-        });
-        if (loadedState) {
-            this.applyLoadedState(loadedState);
-        } else {
-            this.setupPlayers();
-            this.researchFocus = this.rules.technologyFields?.[0]?.id || null;
-            this.minerals = this.mineralStock.i + this.mineralStock.b + this.mineralStock.g;
-            this.rng = new PCG32(this.rngSeed, 54n);
-            this.turnHash = this.hashTurnSeed(this.rngSeed, BigInt(this.turnCount));
-            this.seedShipDesigns();
+        globalThis.UI?.showMainMenu?.();
+    },
 
-            this.generateGalaxy(80);
-            this.seedHomeworld();
-            this.seedRivals();
+    startNewGame: function(raceConfig, aiCount) {
+        this.turnCount = 0;
+        this.year = 2400;
+        this.state = "RUNNING";
+        this.race = raceConfig;
+        this.aiConfig.aiPlayers = Array.from({ length: aiCount }, (_, i) => i + 2);
 
-            this.logMsg("Welcome, Emperor. The sector is uncharted.", "System");
-        }
+        this.setupPlayers();
+        this.researchFocus = this.rules.technologyFields?.[0]?.id || null;
+        this.minerals = this.mineralStock.i + this.mineralStock.b + this.mineralStock.g;
+        this.rngSeed = BigInt(Math.floor(Math.random() * 999999999));
+        this.rng = new PCG32(this.rngSeed, 54n);
+        this.turnHash = this.hashTurnSeed(this.rngSeed, BigInt(this.turnCount));
+
+        this.seedShipDesigns();
+        this.generateGalaxy(80);
+        this.seedHomeworld();
+        this.seedRivals();
 
         this.updateVisibility();
+        this.logMsg("System initialized. Command link established.", "System");
     },
 
     applyLoadedState: function(loadedState) {
@@ -292,6 +293,13 @@ export const Game = {
         const aiPlayers = this.aiConfig?.aiPlayers || [2];
         const techFields = this.rules?.technologyFields || [];
         const raceModifiers = resolveRaceModifiers(this.race).modifiers;
+        const aiRace = new Race({
+            name: "Crimson Directorate",
+            type: "Aggressors",
+            mining: "Strip",
+            economy: { resPerColonist: 1000 }
+        });
+        const aiModifiers = resolveRaceModifiers(aiRace).modifiers;
         this.players = [
             {
                 id: 1,
@@ -306,8 +314,8 @@ export const Game = {
                 type: "ai",
                 status: "active",
                 eliminatedAtTurn: null,
-                race: this.race,
-                technology: createTechnologyState(techFields, undefined, raceModifiers)
+                race: aiRace,
+                technology: createTechnologyState(techFields, undefined, aiModifiers)
             }))
         ];
 
@@ -459,21 +467,26 @@ export const Game = {
         if (!aiPlayers.length) {
             return;
         }
-        const availableStars = this.stars.filter(star => !star.owner && star.id !== 0);
+        const availableStars = this.stars
+            .filter(star => !star.owner && star.id !== 0)
+            .sort((a, b) => dist(b, this.stars[0]) - dist(a, this.stars[0]));
+
         aiPlayers.forEach((player, index) => {
-            const rival = availableStars[index] || this.stars[10 + index];
+            const rival = availableStars[index];
             if (!rival) {
                 return;
             }
+
             AIController.ensureBasicDesigns(this, player.id);
             const designs = this.shipDesigns[player.id] || [];
             const raiderDesign = designs.find(design => !design.flags.includes("colonize")) || designs[0];
+
             rival.owner = player.id;
-            rival.name = index === 0 ? "CRIMSON NODE" : `DIRECTORATE-${player.id}`;
+            rival.name = `RIVAL-${player.id} PRIME`;
             rival.pop = 40000;
             rival.def.mines = 80;
             rival.def.facts = 90;
-            rival.def.base = { name: "Ravager Hub", hp: 900 };
+            rival.def.base = { name: "Orbital Hub", hp: 900 };
             rival.hasStargate = true;
             rival.stargateMassLimit = 360;
             rival.stargateRange = 850;
@@ -484,7 +497,7 @@ export const Game = {
                 owner: player.id,
                 x: rival.x,
                 y: rival.y,
-                name: `Raider Wing ${player.id}`,
+                name: `Defense Wing ${player.id}`,
                 design: raiderDesign
             }));
         });

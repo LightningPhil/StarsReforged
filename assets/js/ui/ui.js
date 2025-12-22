@@ -4,6 +4,8 @@ import { dist } from "../core/utils.js";
 import { getComponentById, getComponentsBySlot } from "../models/technology.js";
 import { validateDesign } from "../core/shipDesign.js";
 import { Order, ORDER_TYPES, WAYPOINT_TASK_PAYLOADS, WAYPOINT_TASKS } from "../models/orders.js";
+import { Race } from "../models/entities.js";
+import { getRaceTraitCatalog } from "../core/raceTraits.js";
 
 let renderer = null;
 
@@ -130,6 +132,139 @@ export const UI = {
         this.updateFleets();
         this.updateResearch();
         this.updateComms();
+    },
+
+    showMainMenu: function() {
+        this.setScreen('menu');
+        document.getElementById('game-header').classList.add('ui-hidden');
+        document.getElementById('game-nav').classList.add('ui-hidden');
+        document.getElementById('game-footer').classList.add('ui-hidden');
+        document.getElementById('ctx-panel').classList.add('ui-hidden');
+        document.getElementById('galaxy-canvas').classList.add('ui-hidden');
+    },
+
+    showRaceSetup: function() {
+        this.setScreen('setup');
+        this.renderTraitSelection();
+    },
+
+    loadGame: function() {
+        const save = localStorage.getItem("stars_save");
+        if (save) {
+            alert("Save system integration required.");
+        } else {
+            alert("No save found.");
+        }
+    },
+
+    renderTraitSelection: function() {
+        const catalog = getRaceTraitCatalog();
+        const primaries = document.getElementById('setup-primary-traits');
+        const lessers = document.getElementById('setup-lesser-traits');
+        primaries.innerHTML = '';
+        lessers.innerHTML = '';
+
+        const allTraits = Object.values(catalog);
+
+        allTraits.filter(t => t.type === 'primary').forEach(t => {
+            const div = document.createElement('div');
+            div.className = 'trait-item';
+            div.innerHTML = `
+                <div>
+                    <input type="radio" name="trait_primary" value="${t.id}" data-cost="${t.cost}">
+                    <strong>${t.name}</strong> <span class="trait-desc">(Cost ${t.cost})</span>
+                </div>
+            `;
+            div.querySelector('input').addEventListener('change', () => this.updatePoints());
+            primaries.appendChild(div);
+        });
+
+        allTraits.filter(t => t.type === 'lesser').forEach(t => {
+            const div = document.createElement('div');
+            div.className = 'trait-item';
+            div.innerHTML = `
+                <div>
+                    <input type="checkbox" name="trait_lesser" value="${t.id}" data-cost="${t.cost}">
+                    <strong>${t.name}</strong> <span class="trait-desc">(Cost ${t.cost})</span>
+                </div>
+            `;
+            div.querySelector('input').addEventListener('change', () => this.updatePoints());
+            lessers.appendChild(div);
+        });
+
+        document.querySelector('input[name="trait_primary"]').checked = true;
+        this.updatePoints();
+    },
+
+    updatePoints: function() {
+        const budget = 10;
+        let spent = 0;
+
+        const primary = document.querySelector('input[name="trait_primary"]:checked');
+        if (primary) {
+            spent += parseInt(primary.dataset.cost);
+        }
+
+        document.querySelectorAll('input[name="trait_lesser"]:checked').forEach(c => {
+            spent += parseInt(c.dataset.cost);
+        });
+
+        const display = document.getElementById('setup-points');
+        display.innerText = (budget - spent);
+
+        const btn = document.querySelector('button[onclick="UI.startGame()"]');
+        if (spent > budget) {
+            display.style.color = 'var(--c-alert)';
+            btn.disabled = true;
+            btn.innerText = "OVER BUDGET";
+        } else {
+            display.style.color = 'var(--c-good)';
+            btn.disabled = false;
+            btn.innerText = "INITIALIZE SIMULATION";
+        }
+    },
+
+    startGame: function() {
+        const name = document.getElementById('setup-name').value || "The Unknown";
+        const aiCount = parseInt(document.getElementById('setup-ai-count').value) || 1;
+
+        const primary = document.querySelector('input[name="trait_primary"]:checked');
+        const primaryTrait = primary ? primary.value : null;
+
+        const lesserTraits = [];
+        document.querySelectorAll('input[name="trait_lesser"]:checked').forEach(c => {
+            lesserTraits.push(c.value);
+        });
+
+        const raceConfig = new Race({
+            name: name,
+            type: "Custom",
+            grav: "Adaptive",
+            temp: "Adaptive",
+            growth: "Normal",
+            mining: "Standard",
+            primaryTrait: primaryTrait,
+            lesserTraits: lesserTraits
+        });
+
+        Game.startNewGame(raceConfig, aiCount);
+
+        document.getElementById('game-header').classList.remove('ui-hidden');
+        document.getElementById('game-nav').classList.remove('ui-hidden');
+        document.getElementById('game-footer').classList.remove('ui-hidden');
+        document.getElementById('ctx-panel').classList.remove('ui-hidden');
+        document.getElementById('galaxy-canvas').classList.remove('ui-hidden');
+
+        UI.init();
+        this.setScreen('map');
+        this.updateEmpire();
+        this.updateComms();
+
+        if (window.Renderer) {
+            window.Renderer.resize();
+            window.Renderer.cam.x = Game.fleets[0].x;
+            window.Renderer.cam.y = Game.fleets[0].y;
+        }
     },
 
     saveDesign: function() {
@@ -391,11 +526,14 @@ export const UI = {
         document.getElementById('emp-known').innerText = Game.stars.filter(s => s.known).length;
         document.getElementById('emp-fleets').innerText = Game.fleets.filter(f => f.owner === 1).length;
 
-        document.getElementById('race-type').innerText = Game.race.type;
-        document.getElementById('race-grav').innerText = Game.race.grav;
-        document.getElementById('race-temp').innerText = Game.race.temp;
-        document.getElementById('race-growth').innerText = Game.race.growth;
-        document.getElementById('race-mining').innerText = Game.race.mining;
+        document.getElementById('race-type').innerText = Game.race.name;
+        const catalog = getRaceTraitCatalog();
+        const primaryTrait = catalog[Game.race.primaryTrait];
+        document.getElementById('race-primary').innerText = primaryTrait ? primaryTrait.name : "None";
+        const lesserTraits = (Game.race.lesserTraits || [])
+            .map(id => catalog[id]?.name)
+            .filter(Boolean);
+        document.getElementById('race-bonuses').innerText = lesserTraits.length ? lesserTraits.join(", ") : "Standard";
 
         const diplo = document.getElementById('emp-diplomacy');
         diplo.innerHTML = '';

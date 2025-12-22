@@ -97,6 +97,9 @@ export const getVictoryTypeLabel = (victoryType) => ({
 
 export const VictoryResolver = {
     check(state) {
+        if (state?.turnCount < 10) {
+            return null;
+        }
         if (!state?.players?.length) {
             return null;
         }
