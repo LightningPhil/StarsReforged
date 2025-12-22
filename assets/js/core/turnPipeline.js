@@ -12,6 +12,20 @@ const normalizeOrderStates = (orderStates) => normalizeArray(orderStates).flatMa
     return deserialized?.orders || [];
 });
 
+const mapPlanetKnowledgeById = (entries) => normalizeArray(entries)
+    .filter(entry => Number.isFinite(entry?.id))
+    .reduce((acc, entry) => {
+        acc[entry.id] = {
+            id: entry.id,
+            name: entry.name ?? null,
+            x: entry.x ?? null,
+            y: entry.y ?? null,
+            snapshot: entry.snapshot ? { ...entry.snapshot } : null,
+            turn_seen: entry.turn_seen ?? null
+        };
+        return acc;
+    }, {});
+
 const normalizeOrdersInput = (orders) => {
     if (Array.isArray(orders)) {
         return orders;
@@ -50,6 +64,12 @@ export const runTurnPipeline = ({ universeState, playerStates, orderStates }) =>
         const player = gameState.players.find(entry => entry.id === playerId);
         if (player && playerState.research) {
             player.technology = playerState.research;
+        }
+        if (playerState.planet_knowledge?.length) {
+            if (!gameState.planetKnowledge) {
+                gameState.planetKnowledge = {};
+            }
+            gameState.planetKnowledge[playerId] = mapPlanetKnowledgeById(playerState.planet_knowledge);
         }
     });
 
