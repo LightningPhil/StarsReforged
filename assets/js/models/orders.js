@@ -26,6 +26,30 @@ export const WAYPOINT_TASKS = {
     SCRAP: "SCRAP"
 };
 
+export const WAYPOINT_TASK_PAYLOADS = {
+    TRANSPORT: {
+        mode: "UNLOAD",
+        cargo: { i: 0, b: 0, g: 0, pop: 0 }
+    },
+    COLONIZE: {
+        seedPopulation: 2500,
+        minerals: { i: 0, b: 0, g: 0 }
+    },
+    REMOTE_MINE: {
+        minerals: { i: 0, b: 0, g: 0 }
+    },
+    LAY_MINES: {
+        mineUnitsToDeploy: 0,
+        type: "standard"
+    },
+    PATROL: {
+        radius: 60
+    },
+    SCRAP: {
+        recoveryRate: 0.5
+    }
+};
+
 export class Order {
     constructor(type, issuerId, payload) {
         this.id = crypto.randomUUID();

@@ -3,7 +3,7 @@ import { Game } from "../core/game.js";
 import { dist } from "../core/utils.js";
 import { getComponentById, getComponentsBySlot } from "../models/technology.js";
 import { validateDesign } from "../core/shipDesign.js";
-import { Order, ORDER_TYPES } from "../models/orders.js";
+import { Order, ORDER_TYPES, WAYPOINT_TASK_PAYLOADS, WAYPOINT_TASKS } from "../models/orders.js";
 
 let renderer = null;
 
@@ -124,6 +124,21 @@ export const UI = {
 
     placeMinefield: function(fleet, mineUnits) {
         Game.placeMinefield(fleet, mineUnits);
+        this.updateSide();
+        this.updateComms();
+    },
+
+    queueWaypointTask: function(fleet, waypoint) {
+        if (!fleet || !waypoint) {
+            return;
+        }
+        Game.queueOrder(new Order(ORDER_TYPES.SET_WAYPOINTS, fleet.owner, {
+            fleetId: fleet.id,
+            waypoints: [waypoint]
+        }));
+        if (fleet.owner === 1) {
+            Game.logMsg(`${fleet.name} waypoint queued: ${waypoint.task || "Transit"}.`, "Command");
+        }
         this.updateSide();
         this.updateComms();
     },
@@ -781,6 +796,51 @@ export const UI = {
                 h += `<button class="action" id="queue-stargate-jump" data-fleet-id="${fleet.id}" data-source-id="${sourceStar.id}" ${destinations.length ? "" : "disabled"}>QUEUE JUMP</button>`;
                 h += `</div>`;
             }
+            const waypointX = Math.round(fleet.dest?.x ?? fleet.x);
+            const waypointY = Math.round(fleet.dest?.y ?? fleet.y);
+            const taskOptions = Object.values(WAYPOINT_TASKS)
+                .map(task => `<option value="${task}">${task.replace("_", " ")}</option>`)
+                .join("");
+            const transportDefaults = WAYPOINT_TASK_PAYLOADS.TRANSPORT;
+            const colonizeDefaults = WAYPOINT_TASK_PAYLOADS.COLONIZE;
+            const remoteMineDefaults = WAYPOINT_TASK_PAYLOADS.REMOTE_MINE;
+            const layMineDefaults = WAYPOINT_TASK_PAYLOADS.LAY_MINES;
+            const patrolDefaults = WAYPOINT_TASK_PAYLOADS.PATROL;
+            const scrapDefaults = WAYPOINT_TASK_PAYLOADS.SCRAP;
+            h += `<div class="panel-block"><h3>WAYPOINT TASK</h3>`;
+            h += `<div class="stat-row"><span>X</span> <span class="val"><input id="waypoint-x" type="number" value="${waypointX}" style="width:90px;"></span></div>`;
+            h += `<div class="stat-row"><span>Y</span> <span class="val"><input id="waypoint-y" type="number" value="${waypointY}" style="width:90px;"></span></div>`;
+            h += `<div class="stat-row"><span>Task</span> <select id="waypoint-task"><option value="">None</option>${taskOptions}</select></div>`;
+            h += `<div class="waypoint-task-fields" data-task="TRANSPORT" style="display:none;">`;
+            h += `<div class="stat-row"><span>Mode</span> <select id="waypoint-transport-mode"><option value="LOAD">Load</option><option value="UNLOAD" selected>Unload</option></select></div>`;
+            h += `<div class="stat-row"><span>Iron</span> <span class="val"><input id="waypoint-transport-i" type="number" min="0" value="${transportDefaults.cargo.i}" style="width:80px;"></span></div>`;
+            h += `<div class="stat-row"><span>Bor</span> <span class="val"><input id="waypoint-transport-b" type="number" min="0" value="${transportDefaults.cargo.b}" style="width:80px;"></span></div>`;
+            h += `<div class="stat-row"><span>Germ</span> <span class="val"><input id="waypoint-transport-g" type="number" min="0" value="${transportDefaults.cargo.g}" style="width:80px;"></span></div>`;
+            h += `<div class="stat-row"><span>Pop</span> <span class="val"><input id="waypoint-transport-pop" type="number" min="0" value="${transportDefaults.cargo.pop}" style="width:80px;"></span></div>`;
+            h += `</div>`;
+            h += `<div class="waypoint-task-fields" data-task="COLONIZE" style="display:none;">`;
+            h += `<div class="stat-row"><span>Seed Pop</span> <span class="val"><input id="waypoint-colonize-pop" type="number" min="0" value="${colonizeDefaults.seedPopulation}" style="width:90px;"></span></div>`;
+            h += `<div class="stat-row"><span>Iron</span> <span class="val"><input id="waypoint-colonize-i" type="number" min="0" value="${colonizeDefaults.minerals.i}" style="width:80px;"></span></div>`;
+            h += `<div class="stat-row"><span>Bor</span> <span class="val"><input id="waypoint-colonize-b" type="number" min="0" value="${colonizeDefaults.minerals.b}" style="width:80px;"></span></div>`;
+            h += `<div class="stat-row"><span>Germ</span> <span class="val"><input id="waypoint-colonize-g" type="number" min="0" value="${colonizeDefaults.minerals.g}" style="width:80px;"></span></div>`;
+            h += `</div>`;
+            h += `<div class="waypoint-task-fields" data-task="REMOTE_MINE" style="display:none;">`;
+            h += `<div class="stat-row"><span>Iron</span> <span class="val"><input id="waypoint-remote-i" type="number" min="0" value="${remoteMineDefaults.minerals.i}" style="width:80px;"></span></div>`;
+            h += `<div class="stat-row"><span>Bor</span> <span class="val"><input id="waypoint-remote-b" type="number" min="0" value="${remoteMineDefaults.minerals.b}" style="width:80px;"></span></div>`;
+            h += `<div class="stat-row"><span>Germ</span> <span class="val"><input id="waypoint-remote-g" type="number" min="0" value="${remoteMineDefaults.minerals.g}" style="width:80px;"></span></div>`;
+            h += `</div>`;
+            h += `<div class="waypoint-task-fields" data-task="LAY_MINES" style="display:none;">`;
+            h += `<div class="stat-row"><span>Units</span> <span class="val"><input id="waypoint-mines-units" type="number" min="0" value="${layMineDefaults.mineUnitsToDeploy}" style="width:80px;"></span></div>`;
+            h += `<div class="stat-row"><span>Type</span> <select id="waypoint-mines-type"><option value="standard">Standard</option><option value="heavy">Heavy</option><option value="smart">Smart</option></select></div>`;
+            h += `</div>`;
+            h += `<div class="waypoint-task-fields" data-task="PATROL" style="display:none;">`;
+            h += `<div class="stat-row"><span>Radius</span> <span class="val"><input id="waypoint-patrol-radius" type="number" min="0" value="${patrolDefaults.radius}" style="width:80px;"></span></div>`;
+            h += `</div>`;
+            h += `<div class="waypoint-task-fields" data-task="SCRAP" style="display:none;">`;
+            h += `<div class="stat-row"><span>Recovery</span> <span class="val"><input id="waypoint-scrap-rate" type="number" min="0" max="1" step="0.05" value="${scrapDefaults.recoveryRate}" style="width:80px;"></span></div>`;
+            h += `</div>`;
+            h += `<button class="action" id="queue-waypoint-task" data-fleet-id="${fleet.id}">QUEUE WAYPOINT</button>`;
+            h += `</div>`;
             h += `<button class="action" style="border-color:var(--c-alert); color:var(--c-alert)">SCRAP FLEET</button>`;
         }
 
@@ -812,6 +872,92 @@ export const UI = {
                     return;
                 }
                 this.queueStargateJump(fleetId, sourceId, destinationId);
+            });
+        }
+
+        const waypointTaskSelect = document.getElementById('waypoint-task');
+        if (waypointTaskSelect) {
+            const taskFields = Array.from(document.querySelectorAll('.waypoint-task-fields'));
+            const updateWaypointFields = () => {
+                const task = waypointTaskSelect.value;
+                taskFields.forEach(field => {
+                    field.style.display = field.dataset.task === task ? 'block' : 'none';
+                });
+            };
+            waypointTaskSelect.addEventListener('change', updateWaypointFields);
+            updateWaypointFields();
+        }
+
+        const waypointButton = document.getElementById('queue-waypoint-task');
+        if (waypointButton) {
+            waypointButton.addEventListener('click', () => {
+                const fleetId = parseInt(waypointButton.dataset.fleetId, 10);
+                const fleet = Game.fleets.find(item => item.id === fleetId);
+                if (!fleet) {
+                    return;
+                }
+                const x = parseInt(document.getElementById('waypoint-x')?.value, 10);
+                const y = parseInt(document.getElementById('waypoint-y')?.value, 10);
+                if (!Number.isFinite(x) || !Number.isFinite(y)) {
+                    Game.logMsg("ORDER REJECTED: Waypoint coordinates invalid.", "System", "high");
+                    this.updateComms();
+                    return;
+                }
+                const task = document.getElementById('waypoint-task')?.value || null;
+                let data = null;
+                switch (task) {
+                    case WAYPOINT_TASKS.TRANSPORT:
+                        data = {
+                            mode: document.getElementById('waypoint-transport-mode')?.value || "UNLOAD",
+                            cargo: {
+                                i: Math.max(0, parseInt(document.getElementById('waypoint-transport-i')?.value, 10) || 0),
+                                b: Math.max(0, parseInt(document.getElementById('waypoint-transport-b')?.value, 10) || 0),
+                                g: Math.max(0, parseInt(document.getElementById('waypoint-transport-g')?.value, 10) || 0),
+                                pop: Math.max(0, parseInt(document.getElementById('waypoint-transport-pop')?.value, 10) || 0)
+                            }
+                        };
+                        break;
+                    case WAYPOINT_TASKS.COLONIZE:
+                        data = {
+                            seedPopulation: Math.max(0, parseInt(document.getElementById('waypoint-colonize-pop')?.value, 10) || 0),
+                            minerals: {
+                                i: Math.max(0, parseInt(document.getElementById('waypoint-colonize-i')?.value, 10) || 0),
+                                b: Math.max(0, parseInt(document.getElementById('waypoint-colonize-b')?.value, 10) || 0),
+                                g: Math.max(0, parseInt(document.getElementById('waypoint-colonize-g')?.value, 10) || 0)
+                            }
+                        };
+                        break;
+                    case WAYPOINT_TASKS.REMOTE_MINE:
+                        data = {
+                            minerals: {
+                                i: Math.max(0, parseInt(document.getElementById('waypoint-remote-i')?.value, 10) || 0),
+                                b: Math.max(0, parseInt(document.getElementById('waypoint-remote-b')?.value, 10) || 0),
+                                g: Math.max(0, parseInt(document.getElementById('waypoint-remote-g')?.value, 10) || 0)
+                            }
+                        };
+                        break;
+                    case WAYPOINT_TASKS.LAY_MINES:
+                        data = {
+                            mineUnitsToDeploy: Math.max(0, parseInt(document.getElementById('waypoint-mines-units')?.value, 10) || 0),
+                            type: document.getElementById('waypoint-mines-type')?.value || "standard"
+                        };
+                        break;
+                    case WAYPOINT_TASKS.PATROL:
+                        data = {
+                            radius: Math.max(0, parseInt(document.getElementById('waypoint-patrol-radius')?.value, 10) || 0)
+                        };
+                        break;
+                    case WAYPOINT_TASKS.SCRAP:
+                        data = {
+                            recoveryRate: Math.max(0, parseFloat(document.getElementById('waypoint-scrap-rate')?.value) || 0)
+                        };
+                        break;
+                    default:
+                        data = null;
+                        break;
+                }
+                const waypoint = { x, y, task, data };
+                this.queueWaypointTask(fleet, waypoint);
             });
         }
     }
