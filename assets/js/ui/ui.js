@@ -3,7 +3,7 @@ import { Game } from "../core/game.js";
 import { dist } from "../core/utils.js";
 import { getComponentById, getComponentsBySlot } from "../models/technology.js";
 import { validateDesign } from "../core/shipDesign.js";
-import { ORDER_TYPES } from "../models/orders.js";
+import { Order, ORDER_TYPES } from "../models/orders.js";
 
 let renderer = null;
 
@@ -12,6 +12,9 @@ export const bindRenderer = (rendererRef) => {
 };
 
 export const UI = {
+    audio: {
+        ctx: null
+    },
     init: function() {
         this.renderTech();
         this.setupDesignWorkshop();
@@ -101,7 +104,19 @@ export const UI = {
     },
 
     launchPacket: function(starId) {
-        Game.launchPacket(starId);
+        const targetId = parseInt(document.getElementById('driver-target').value, 10);
+        const amount = parseInt(document.getElementById('driver-amount').value, 10);
+        if (Number.isNaN(targetId)) {
+            Game.logMsg("Select a valid target for the packet.", "Industry");
+            this.updateComms();
+            return;
+        }
+        if (!amount || amount <= 0) {
+            Game.logMsg("Specify a transfer amount.", "Industry");
+            this.updateComms();
+            return;
+        }
+        Game.launchPacket(starId, targetId, amount, 1);
         this.updateHeader();
         this.updateSide();
         this.updateComms();
@@ -111,6 +126,26 @@ export const UI = {
         Game.placeMinefield(fleet, mineUnits);
         this.updateSide();
         this.updateComms();
+    },
+
+    playSound: function(freq, duration) {
+        try {
+            if (!this.audio.ctx) {
+                this.audio.ctx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            const ctx = this.audio.ctx;
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.frequency.value = freq;
+            osc.type = 'sine';
+            gain.gain.value = 0.06;
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start();
+            osc.stop(ctx.currentTime + duration);
+        } catch (e) {
+            // Audio not supported or blocked.
+        }
     },
 
     findStarAtPosition: function(x, y, threshold = 12) {
@@ -178,11 +213,7 @@ export const UI = {
             reject("Destination out of gate range.");
             return;
         }
-        Game.orders.push({
-            type: ORDER_TYPES.STARGATE_JUMP,
-            issuerId: 1,
-            payload: { fleetId, sourcePlanetId, destinationPlanetId }
-        });
+        Game.queueOrder(new Order(ORDER_TYPES.STARGATE_JUMP, 1, { fleetId, sourcePlanetId, destinationPlanetId }));
         Game.logMsg(`STARGATE: ${fleet.name} queued jump ${source.name} ➜ ${destination.name}`, "Command");
         this.updateSide();
         this.updateComms();
@@ -208,11 +239,7 @@ export const UI = {
             reject("Minefield target invalid.");
             return;
         }
-        Game.orders.push({
-            type: ORDER_TYPES.SWEEP_MINES,
-            issuerId: 1,
-            payload: { fleetId, minefieldId }
-        });
+        Game.queueOrder(new Order(ORDER_TYPES.SWEEP_MINES, 1, { fleetId, minefieldId }));
         Game.logMsg(`SWEEP: ${fleet.name} queued sweep on minefield #${target.id}`, "Command");
         this.updateSide();
         this.updateComms();
@@ -696,7 +723,7 @@ export const UI = {
             }
             if (fleet.mineSweepingStrength > 0) {
                 const intelList = Game.minefieldIntel?.[1] || [];
-                const existingSweep = Game.orders.some(order => order.type === ORDER_TYPES.SWEEP_MINES && order.payload?.fleetId === fleet.id);
+                const existingSweep = Game.getOrderQueue(1).some(order => order.type === ORDER_TYPES.SWEEP_MINES && order.payload?.fleetId === fleet.id);
                 const sweepOptions = intelList.map(entry => {
                     const relation = entry.ownerEmpireId === 1 ? "Friendly" : "Hostile";
                     return `<option value="${entry.id}">#${entry.id} • ${relation} • R=${Math.round(entry.radius)} • S≈${Math.round(entry.estimatedStrength)} • Seen T=${entry.lastSeenTurn}</option>`;
@@ -731,7 +758,7 @@ export const UI = {
                     const distance = Math.hypot(star.x - sourceStar.x, star.y - sourceStar.y);
                     return distance <= sourceInfo.stargateRange;
                 });
-                const existingJump = Game.orders.some(order => order.type === ORDER_TYPES.STARGATE_JUMP && order.payload?.fleetId === fleet.id);
+                const existingJump = Game.getOrderQueue(1).some(order => order.type === ORDER_TYPES.STARGATE_JUMP && order.payload?.fleetId === fleet.id);
                 const destinationOptions = destinations.map(star => `<option value="${star.id}">${star.name}</option>`).join("");
                 const massWarning = fleet.mass > sourceInfo.stargateMassLimit
                     ? `<div style="font-size:12px; color:var(--c-warn);">MASS EXCEEDS LIMIT — MISJUMP RISK ↑</div>`
