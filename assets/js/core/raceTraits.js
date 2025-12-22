@@ -216,6 +216,7 @@ const TRAIT_CATALOG = {
         type: "lesser",
         cost: 2,
         modifiers: {
+            bleedingEdgeTech: true,
             researchCostMultiplier: 0.95,
             researchPointMultiplier: 0.95
         }

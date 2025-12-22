@@ -20,10 +20,48 @@ const TECH_EFFECTS = {
     TERR: { habitabilityTolerance: 0.05 }
 };
 
+const MAX_TECH_LEVEL = 26;
+const RESEARCH_COST_MODES = {
+    bleedingEdge: 0.75,
+    extra: 1.75,
+    less: 0.5
+};
+
 const buildFieldMap = (fields = []) => Object.fromEntries(fields.map(field => ([
     field.id,
     new TechnologyField(field.id)
 ])));
+
+const getFibonacciValue = (index) => {
+    let a = 0;
+    let b = 1;
+    for (let i = 0; i < index; i += 1) {
+        const next = a + b;
+        a = b;
+        b = next;
+    }
+    return a;
+};
+
+const getResearchCostModeMultiplier = (rules, raceModifiers) => {
+    const mode = raceModifiers?.researchCostMode ?? rules?.research?.costMode ?? null;
+    if (Number.isFinite(mode)) {
+        return mode;
+    }
+    if (typeof mode === "string" && RESEARCH_COST_MODES[mode]) {
+        return RESEARCH_COST_MODES[mode];
+    }
+    return 1;
+};
+
+const getOtherFieldLevelSum = (techState, fieldId) => {
+    if (!techState?.fields) {
+        return 0;
+    }
+    return Object.values(techState.fields).reduce((sum, field) => (
+        sum + (field.id === fieldId ? 0 : (field.level || 0))
+    ), 0);
+};
 
 const sanitizeAllocation = (allocation, fields) => {
     const sanitized = {};
@@ -91,20 +129,25 @@ export const createTechnologyState = (fields, allocation = DEFAULT_ALLOCATION, r
         const globalBonus = raceModifiers.startingTechLevels.ALL || 0;
         Object.values(techState.fields).forEach(field => {
             const bonus = raceModifiers.startingTechLevels[field.id] || 0;
-            field.level = Math.max(1, field.level + globalBonus + bonus);
+            field.level = Math.min(MAX_TECH_LEVEL, Math.max(1, field.level + globalBonus + bonus));
         });
     }
     return techState;
 };
 
-export const getRpToNextLevel = (level, rules, raceModifiers = {}, fieldId = null) => {
+export const getRpToNextLevel = (level, rules, raceModifiers = {}, fieldId = null, techState = null) => {
+    if (level >= MAX_TECH_LEVEL) {
+        return Number.POSITIVE_INFINITY;
+    }
     const baseCost = rules?.research?.baseCost ?? 100;
-    const exponent = rules?.research?.costExponent ?? 1.5;
     const raceMultiplier = Number.isFinite(raceModifiers?.researchCostMultiplier) ? raceModifiers.researchCostMultiplier : 1;
     const fieldMultiplier = fieldId && Number.isFinite(raceModifiers?.researchFieldCostMultiplier?.[fieldId])
         ? raceModifiers.researchFieldCostMultiplier[fieldId]
         : 1;
-    return Math.floor(baseCost * Math.pow(level, exponent) * raceMultiplier * fieldMultiplier);
+    const modeMultiplier = getResearchCostModeMultiplier(rules, raceModifiers);
+    const fibonacciCost = baseCost * getFibonacciValue(level + 1);
+    const crossFieldCost = getOtherFieldLevelSum(techState, fieldId) * 10;
+    return Math.floor((fibonacciCost + crossFieldCost) * raceMultiplier * fieldMultiplier * modeMultiplier);
 };
 
 export const calculateEmpireResearchPoints = (state, empireId, raceModifiers = {}) => {
@@ -122,14 +165,23 @@ export const resolveResearchForEmpire = (techState, totalRP, rules, raceModifier
     }
     const allocations = techState.allocation || {};
     Object.values(techState.fields).forEach(field => {
+        if (field.level >= MAX_TECH_LEVEL) {
+            field.level = MAX_TECH_LEVEL;
+            field.storedRP = 0;
+            return;
+        }
         const share = allocations[field.id] ?? 0;
         const fieldBonus = raceModifiers?.researchFieldBonus?.[field.id] || 0;
         field.storedRP += totalRP * share * (1 + fieldBonus);
-        let threshold = getRpToNextLevel(field.level, rules, raceModifiers, field.id);
-        while (field.storedRP >= threshold && threshold > 0) {
+        let threshold = getRpToNextLevel(field.level, rules, raceModifiers, field.id, techState);
+        while (field.storedRP >= threshold && threshold > 0 && field.level < MAX_TECH_LEVEL) {
             field.storedRP -= threshold;
             field.level += 1;
-            threshold = getRpToNextLevel(field.level, rules, raceModifiers, field.id);
+            threshold = getRpToNextLevel(field.level, rules, raceModifiers, field.id, techState);
+        }
+        if (field.level >= MAX_TECH_LEVEL) {
+            field.level = MAX_TECH_LEVEL;
+            field.storedRP = 0;
         }
     });
 };
