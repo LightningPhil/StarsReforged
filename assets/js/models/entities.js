@@ -249,7 +249,8 @@ class Race {
         mining,
         primaryTrait = null,
         lesserTraits = [],
-        tolerance = {}
+        tolerance = {},
+        economy = {}
     }) {
         this.name = name;
         this.type = type;
@@ -263,6 +264,15 @@ class Race {
             grav: { center: 50, width: 25, immune: false, ...(tolerance?.grav || {}) },
             temp: { center: 50, width: 25, immune: false, ...(tolerance?.temp || {}) },
             rad: { center: 50, width: 25, immune: false, ...(tolerance?.rad || {}) }
+        };
+        this.economy = {
+            resPerColonist: economy.resPerColonist ?? 1000,
+            resPerFactory: economy.resPerFactory ?? 10,
+            factoryCost: economy.factoryCost ?? 10,
+            mineCost: economy.mineCost ?? 6,
+            maxFactoriesPer10k: economy.maxFactoriesPer10k ?? 10,
+            maxMinesPer10k: economy.maxMinesPer10k ?? 10,
+            miningRate: economy.miningRate ?? 1
         };
     }
 }

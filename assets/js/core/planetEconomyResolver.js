@@ -38,6 +38,9 @@ const normalizeStarEconomy = (star) => {
     if (!star.autoBuild) {
         star.autoBuild = null;
     }
+    if (!Array.isArray(star.queue)) {
+        star.queue = star.queue ? [star.queue] : [];
+    }
 };
 
 const getPlanetSizeValue = (star) => {
@@ -109,42 +112,42 @@ const getMineralRatios = (queue) => {
     return { ...DEFAULT_MINERAL_RATIO };
 };
 
-const ensureMineralsForProgress = (stock, ratios, progress, alchemyRate = 0) => {
+const ensureMineralsForProgress = (stock, ratios, progress, alchemyRate = 0, availableResources = 0) => {
     const required = {
         i: Math.ceil(progress * ratios.i),
         b: Math.ceil(progress * ratios.b),
         g: Math.ceil(progress * ratios.g)
     };
-    const adjusted = { ...stock };
-    const types = ["i", "b", "g"];
-    types.forEach(type => {
-        let deficit = required[type] - adjusted[type];
-        if (deficit <= 0) {
-            return;
-        }
-        const donors = types.filter(entry => entry !== type);
-        donors.forEach(donor => {
-            if (deficit <= 0) {
-                return;
-            }
-            if (adjusted[donor] <= 0) {
-                return;
-            }
-            if (alchemyRate <= 0) {
-                return;
-            }
-            const convertible = Math.min(adjusted[donor], deficit * alchemyRate);
-            const gained = Math.floor(convertible / alchemyRate);
-            if (gained <= 0) {
-                return;
-            }
-            adjusted[donor] -= gained * alchemyRate;
-            adjusted[type] += gained;
-            deficit -= gained;
-        });
-    });
-    const hasEnough = types.every(type => adjusted[type] >= required[type]);
-    return { hasEnough, required, adjusted };
+    const deficit = {
+        i: Math.max(0, required.i - stock.i),
+        b: Math.max(0, required.b - stock.b),
+        g: Math.max(0, required.g - stock.g)
+    };
+    const totalDeficit = deficit.i + deficit.b + deficit.g;
+    const alchemyCost = totalDeficit > 0 && alchemyRate > 0 ? totalDeficit * alchemyRate : 0;
+    const totalResourceCost = progress + alchemyCost;
+    const hasEnough = totalDeficit === 0
+        ? progress <= availableResources
+        : (alchemyRate > 0 && totalResourceCost <= availableResources);
+    return { hasEnough, required, deficit, alchemyCost, totalResourceCost };
+};
+
+const getRaceEconomy = (race) => ({
+    resPerColonist: race?.economy?.resPerColonist ?? POP_OUTPUT_DIVISOR,
+    resPerFactory: race?.economy?.resPerFactory ?? 10,
+    factoryCost: race?.economy?.factoryCost ?? 10,
+    mineCost: race?.economy?.mineCost ?? 6,
+    maxFactoriesPer10k: race?.economy?.maxFactoriesPer10k ?? 10,
+    maxMinesPer10k: race?.economy?.maxMinesPer10k ?? 10,
+    miningRate: race?.economy?.miningRate ?? BASE_MINING_RATE
+});
+
+const getMaxInstallations = (pop, per10k) => {
+    if (!Number.isFinite(pop) || pop <= 0) {
+        return 0;
+    }
+    return Math.max(0, Math.floor((pop / 10000) * per10k));
+};
 };
 
 const applyTerraforming = (star, techModifiers, raceModifiers) => {
@@ -191,94 +194,116 @@ const applyConcentrationDepletion = (star, type, floorYears) => {
     star.concentration[type] = Math.max(0, concentration - depletion);
 };
 
-const resolveQueue = ({ state, star, productionPoints, raceModifiers }) => {
+const resolveQueue = ({ state, star, productionPoints, raceModifiers, race }) => {
     const economy = state.economy?.[star.owner];
     if (!economy) {
-        return;
+        return 0;
     }
-    if (!star.queue && star.autoBuild) {
-        const buildKind = star.autoBuild.kind;
-        if (!shouldAutoBuild(star, buildKind)) {
-            return;
-        }
-        if (buildKind === "terraform") {
-            return;
-        }
-        const count = Math.max(1, star.autoBuild.count || 1);
-        const structure = DB.structures?.[buildKind];
-        if (structure) {
-            const cost = structure.cost * count;
-            if (economy.credits >= cost) {
-                economy.credits -= cost;
-                star.queue = {
-                    type: "structure",
-                    kind: buildKind,
-                    count,
-                    cost,
-                    done: 0,
-                    owner: star.owner,
-                    mineralCost: {
-                        i: Math.ceil(cost * DEFAULT_MINERAL_RATIO.i),
-                        b: Math.ceil(cost * DEFAULT_MINERAL_RATIO.b),
-                        g: Math.ceil(cost * DEFAULT_MINERAL_RATIO.g)
-                    }
-                };
-            }
-        }
+    const queue = Array.isArray(star.queue) ? star.queue : [];
+    if (!queue.length) {
+        return Math.max(0, Math.min(productionPoints, economy.credits || 0));
     }
-    if (!star.queue) {
-        return;
+    const economyRules = getRaceEconomy(race);
+    let availableResources = Math.max(0, Math.min(productionPoints, economy.credits || 0));
+    if (availableResources <= 0) {
+        return 0;
     }
-    if (!star.queue.mineralCost && Number.isFinite(star.queue.cost)) {
-        star.queue.mineralCost = {
-            i: Math.ceil(star.queue.cost * DEFAULT_MINERAL_RATIO.i),
-            b: Math.ceil(star.queue.cost * DEFAULT_MINERAL_RATIO.b),
-            g: Math.ceil(star.queue.cost * DEFAULT_MINERAL_RATIO.g)
-        };
-    }
-    const remaining = Math.max(0, star.queue.cost - star.queue.done);
-    const desiredProgress = Math.min(productionPoints, remaining);
-    if (desiredProgress <= 0) {
-        return;
-    }
-    const ratios = getMineralRatios(star.queue);
-    const result = ensureMineralsForProgress(
-        star.mins,
-        ratios,
-        desiredProgress,
-        raceModifiers?.mineralAlchemyRate || 0
-    );
-    if (!result || !result.hasEnough) {
-        return;
-    }
-    star.mins = {
-        i: result.adjusted.i - result.required.i,
-        b: result.adjusted.b - result.required.b,
-        g: result.adjusted.g - result.required.g
-    };
-    star.queue.done += desiredProgress;
-    if (star.queue.done >= star.queue.cost) {
-        if (star.queue.type === "ship") {
+
+    const resolveItemCompletion = (item) => {
+        if (item.type === "ship") {
             const fleetId = state.nextFleetId++;
             state.fleets.push(new Fleet({
                 id: fleetId,
-                owner: star.queue.owner,
+                owner: item.owner,
                 x: star.x,
                 y: star.y,
-                name: `${star.queue.bp.name} ${fleetId}`,
-                design: star.queue.bp
+                name: `${item.bp.name} ${fleetId}`,
+                design: item.bp
             }));
-        } else if (star.queue.type === "structure") {
-            if (star.queue.kind === "mine") {
-                star.mines += star.queue.count;
-            } else if (star.queue.kind === "factory") {
-                star.factories += star.queue.count;
-            } else if (star.queue.kind === "base") {
+        } else if (item.type === "structure") {
+            if (item.kind === "mine") {
+                const maxMines = getMaxInstallations(star.pop, economyRules.maxMinesPer10k);
+                star.mines = Math.min(maxMines, star.mines + item.count);
+            } else if (item.kind === "factory") {
+                const maxFactories = getMaxInstallations(star.pop, economyRules.maxFactoriesPer10k);
+                star.factories = Math.min(maxFactories, star.factories + item.count);
+            } else if (item.kind === "base") {
                 star.def.base = { name: "Starbase I", hp: 1000 };
             }
         }
-        star.queue = null;
+    };
+
+    for (let index = 0; index < queue.length; index += 1) {
+        const item = queue[index];
+        if (!item) {
+            continue;
+        }
+        if (!item.mineralCost && Number.isFinite(item.cost)) {
+            item.mineralCost = {
+                i: Math.ceil(item.cost * DEFAULT_MINERAL_RATIO.i),
+                b: Math.ceil(item.cost * DEFAULT_MINERAL_RATIO.b),
+                g: Math.ceil(item.cost * DEFAULT_MINERAL_RATIO.g)
+            };
+        }
+        const remaining = Math.max(0, item.cost - item.done);
+        if (remaining <= 0) {
+            resolveItemCompletion(item);
+            queue.splice(index, 1);
+            index -= 1;
+            continue;
+        }
+        const desiredProgress = Math.min(availableResources, remaining);
+        if (desiredProgress <= 0) {
+            break;
+        }
+        const ratios = getMineralRatios(item);
+        let low = 0;
+        let high = desiredProgress;
+        let best = 0;
+        let bestResult = null;
+        while (low <= high) {
+            const mid = Math.floor((low + high) / 2);
+            const attempt = ensureMineralsForProgress(
+                star.mins,
+                ratios,
+                mid,
+                raceModifiers?.mineralAlchemyRate || 0,
+                availableResources
+            );
+            if (attempt.hasEnough) {
+                best = mid;
+                bestResult = attempt;
+                low = mid + 1;
+            } else {
+                high = mid - 1;
+            }
+        }
+        if (best <= 0 || !bestResult) {
+            item.blocked = true;
+            break;
+        }
+        item.blocked = false;
+        const { required, deficit, totalResourceCost } = bestResult;
+        availableResources = Math.max(0, availableResources - totalResourceCost);
+        economy.credits = Math.max(0, (economy.credits || 0) - totalResourceCost);
+        star.mins = {
+            i: Math.max(0, star.mins.i - (required.i - deficit.i)),
+            b: Math.max(0, star.mins.b - (required.b - deficit.b)),
+            g: Math.max(0, star.mins.g - (required.g - deficit.g))
+        };
+        item.done += best;
+        if (item.done >= item.cost) {
+            resolveItemCompletion(item);
+            queue.splice(index, 1);
+            index -= 1;
+        } else {
+            break;
+        }
+        if (availableResources <= 0) {
+            break;
+        }
     }
+    return availableResources;
 };
 
 export const resolvePlanetEconomy = (state) => {
@@ -291,16 +316,23 @@ export const resolvePlanetEconomy = (state) => {
             const race = getRaceForEmpire(state, star.owner);
             const raceModifiers = resolveRaceModifiers(race).modifiers;
             const alternateReality = isAlternateReality(race, raceModifiers);
+            const economyRules = getRaceEconomy(race);
             normalizeStarEconomy(star);
             const techState = getTechnologyStateForEmpire(state, star.owner);
             const techModifiers = getTechnologyModifiers(techState);
             applyTerraforming(star, techModifiers, raceModifiers);
             const habitabilityValue = getHabitabilityScore({ star, race, techModifiers });
             star.habitability = Math.round(habitabilityValue);
-            star.deathRate = habitabilityValue < 0 ? Math.round(Math.abs(habitabilityValue / 10) * 100) : 0;
+            star.deathRate = habitabilityValue < 0 ? Math.round(Math.abs(habitabilityValue) / 10) : 0;
             const maxPopulation = getMaxPopulation(star, race, raceModifiers, alternateReality);
+            if (raceModifiers.noFactories) {
+                star.factories = 0;
+            }
+            if (raceModifiers.noMines) {
+                star.mines = 0;
+            }
             if (habitabilityValue < 0) {
-                const losses = Math.floor(star.pop * (Math.abs(habitabilityValue) / 10));
+                const losses = Math.floor(star.pop * (Math.abs(habitabilityValue) / 1000));
                 star.pop = Math.max(0, Math.floor(star.pop - losses));
             } else if (star.pop < maxPopulation) {
                 const baseGrowthRate = parseGrowthRate(race);
@@ -317,7 +349,7 @@ export const resolvePlanetEconomy = (state) => {
                 star.deathRate = Math.max(star.deathRate, 12);
             }
 
-            const popIncome = Math.floor(star.pop / POP_OUTPUT_DIVISOR);
+            const popIncome = Math.floor(star.pop / economyRules.resPerColonist);
             let productionMultiplier = 1;
             if (crowdingRatio >= 1 && crowdingRatio <= 3) {
                 productionMultiplier = 0.5;
@@ -325,15 +357,23 @@ export const resolvePlanetEconomy = (state) => {
                 productionMultiplier = 0;
             }
             const adjustedPopIncome = Math.floor(popIncome * productionMultiplier);
-            const effectiveFactories = raceModifiers.noFactories ? 0 : star.factories;
-            const productionPoints = Math.max(0, (alternateReality ? 0 : adjustedPopIncome) + effectiveFactories);
+            const maxFactories = getMaxInstallations(star.pop, economyRules.maxFactoriesPer10k);
+            const maxMines = getMaxInstallations(star.pop, economyRules.maxMinesPer10k);
+            if (Number.isFinite(maxFactories)) {
+                star.factories = Math.min(star.factories, maxFactories);
+            }
+            if (Number.isFinite(maxMines)) {
+                star.mines = Math.min(star.mines, maxMines);
+            }
+            const effectiveFactories = raceModifiers.noFactories ? 0 : Math.min(star.factories, maxFactories);
+            const productionPoints = Math.max(0, (alternateReality ? 0 : adjustedPopIncome) + (effectiveFactories * economyRules.resPerFactory));
 
             const economy = state.economy?.[star.owner];
             if (!economy) {
                 return;
             }
 
-            let resources = adjustedPopIncome + effectiveFactories;
+            let resources = adjustedPopIncome + (effectiveFactories * economyRules.resPerFactory);
             if (alternateReality) {
                 const energyLevel = techState?.fields?.ENER?.level ?? 0;
                 resources = Math.floor((star.pop * Math.max(1, energyLevel)) / POP_OUTPUT_DIVISOR);
@@ -345,7 +385,7 @@ export const resolvePlanetEconomy = (state) => {
             economy.credits += resources;
 
             const miningMultiplier = raceModifiers.miningRateMultiplier || 1;
-            const miningRate = BASE_MINING_RATE * miningMultiplier;
+            const miningRate = economyRules.miningRate * miningMultiplier;
             const iGain = Math.floor(miningRate * (star.concentration.i / 100) * star.mines);
             const bGain = Math.floor(miningRate * (star.concentration.b / 100) * star.mines);
             const gGain = Math.floor(miningRate * (star.concentration.g / 100) * star.mines);
@@ -359,7 +399,47 @@ export const resolvePlanetEconomy = (state) => {
             applyConcentrationDepletion(star, "b", depletionFloor);
             applyConcentrationDepletion(star, "g", depletionFloor);
 
-            resolveQueue({ state, star, productionPoints, raceModifiers });
+            const remainingResources = resolveQueue({ state, star, productionPoints, raceModifiers, race });
+            if (remainingResources > 0 && star.autoBuild) {
+                const buildKind = star.autoBuild.kind;
+                if (shouldAutoBuild(star, buildKind) && buildKind !== "terraform") {
+                    if (buildKind === "factory" && raceModifiers.noFactories) {
+                        return;
+                    }
+                    if (buildKind === "mine" && raceModifiers.noMines) {
+                        return;
+                    }
+                    const structure = DB.structures?.[buildKind];
+                    if (structure) {
+                        let count = Math.max(1, star.autoBuild.count || 1);
+                        if (buildKind === "mine") {
+                            const maxMines = getMaxInstallations(star.pop, economyRules.maxMinesPer10k);
+                            count = Math.max(0, Math.min(count, maxMines - star.mines));
+                        } else if (buildKind === "factory") {
+                            const maxFactories = getMaxInstallations(star.pop, economyRules.maxFactoriesPer10k);
+                            count = Math.max(0, Math.min(count, maxFactories - star.factories));
+                        }
+                        if (count > 0) {
+                            const baseCost = buildKind === "mine"
+                                ? economyRules.mineCost
+                                : buildKind === "factory"
+                                    ? economyRules.factoryCost
+                                    : structure.cost;
+                            const cost = baseCost * count;
+                            const spend = Math.min(remainingResources, cost, economy.credits || 0);
+                            if (spend >= baseCost) {
+                                const actualCount = Math.floor(spend / baseCost);
+                                economy.credits = Math.max(0, (economy.credits || 0) - (actualCount * baseCost));
+                                if (buildKind === "mine") {
+                                    star.mines += actualCount;
+                                } else if (buildKind === "factory") {
+                                    star.factories += actualCount;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
 
             star.def.mines = star.mines;
             star.def.facts = star.factories;

@@ -5,6 +5,9 @@
     "costExponent": 1.5,
     "populationModifier": 0.1
   },
+  "population": {
+    "inTransitDeathRate": 0.02
+  },
   "victory": {
     "economicSupremacyThreshold": 0.6,
     "planetShareThreshold": 0.6,

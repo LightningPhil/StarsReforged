@@ -279,7 +279,7 @@ export const deserializeUniverseState = (state) => {
             facts: dto.def?.facts ?? 0,
             base: dto.def?.base ?? null
         };
-        star.queue = dto.queue ? { ...dto.queue } : null;
+        star.queue = Array.isArray(dto.queue) ? dto.queue.map(item => ({ ...item })) : (dto.queue ? [{ ...dto.queue }] : []);
         star.autoBuild = dto.autoBuild ? { ...dto.autoBuild } : null;
         star.terraforming = dto.terraforming ? { ...dto.terraforming } : star.terraforming;
         star.visible = dto.visible || false;

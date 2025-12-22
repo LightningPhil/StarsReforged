@@ -277,6 +277,12 @@ const validateRaceAvailability = (hull, components, raceModifiers, race) => {
         errors.push(`Hull ${hull.name} requires trait ${hull.requiresTraits.join(", ")}.`);
     }
     components.forEach(component => {
+        if (raceModifiers.noMineLayers && component.flags?.includes("minelayer")) {
+            errors.push(`${component.name} is unavailable for this race.`);
+        }
+        if (raceModifiers.noRamscoop && Number.isFinite(component.stats?.freeSpeed) && component.stats.freeSpeed > 0) {
+            errors.push(`${component.name} is unavailable for this race.`);
+        }
         if (component.requiresTraits?.length && !component.requiresTraits.every(trait => traitSet.has(trait))) {
             errors.push(`${component.name} requires trait ${component.requiresTraits.join(", ")}.`);
         }

@@ -32,7 +32,9 @@ const cloneStar = (star) => {
     clone.factories = star.factories ?? clone.factories;
     clone.mines = star.mines ?? clone.mines;
     clone.def = { ...star.def };
-    clone.queue = star.queue ? { ...star.queue } : null;
+    clone.queue = Array.isArray(star.queue)
+        ? star.queue.map(item => ({ ...item }))
+        : (star.queue ? [{ ...star.queue }] : []);
     clone.autoBuild = star.autoBuild ? { ...star.autoBuild } : null;
     clone.terraforming = star.terraforming ? { ...star.terraforming } : clone.terraforming;
     clone.visible = star.visible;
@@ -346,8 +348,10 @@ const getFleetCloakPercent = (state, fleet) => {
 
 const getFleetScanRange = (state, fleet) => {
     const modifiers = getTechnologyModifiers(getTechnologyStateForEmpire(state, fleet.owner));
+    const raceModifiers = resolveRaceModifiers(getRaceForEmpire(state, fleet.owner)).modifiers;
     const scannerStrength = getFleetScannerStrength(state, fleet);
-    return Math.floor(scannerStrength * modifiers.shipRange);
+    const rangeMultiplier = raceModifiers.noAdvancedScanners ? 2 : 1;
+    return Math.floor(scannerStrength * modifiers.shipRange * rangeMultiplier);
 };
 
 const getPlanetScanRange = (state, empireId) => {
@@ -360,7 +364,7 @@ const getPlanetScanRange = (state, empireId) => {
     return raceModifiers.noAdvancedScanners ? range * 2 : range;
 };
 
-const getIntelState = (scanners, target, cloakPercent = 0) => {
+const getIntelState = (scanners, target, cloakPercent = 0, canPenetrate = true) => {
     const effectiveCloak = Math.min(95, Math.max(0, cloakPercent));
     let bestRatio = null;
     scanners.forEach(scanner => {
@@ -378,7 +382,7 @@ const getIntelState = (scanners, target, cloakPercent = 0) => {
         return "none";
     }
     if (bestRatio <= 0.35) {
-        return "penetrated";
+        return canPenetrate ? "penetrated" : "scanned";
     }
     if (bestRatio <= 0.7) {
         return "scanned";
@@ -399,6 +403,7 @@ const createPlanetSnapshot = (star) => ({
     mines: star.mines,
     terraforming: star.terraforming ? { ...star.terraforming } : null,
     autoBuild: star.autoBuild ? { ...star.autoBuild } : null,
+    queue: Array.isArray(star.queue) ? star.queue.map(item => ({ ...item })) : [],
     hasStargate: star.hasStargate,
     stargateMassLimit: star.stargateMassLimit,
     stargateRange: star.stargateRange,
@@ -794,12 +799,18 @@ const resolveMovement = (state) => {
         fleet.y = move.y;
         const raceModifiers = resolveRaceModifiers(getRaceForEmpire(state, fleet.owner)).modifiers;
         if (fleet.cargo?.pop && move.start) {
-            if (raceModifiers.inTransitDeathRate > 0) {
-                const deaths = Math.floor(fleet.cargo.pop * raceModifiers.inTransitDeathRate);
-                fleet.cargo.pop = Math.max(0, fleet.cargo.pop - deaths);
-            } else if (raceModifiers.inTransitGrowth > 0) {
+            if (raceModifiers.inTransitGrowth > 0) {
                 const growth = Math.floor(fleet.cargo.pop * raceModifiers.inTransitGrowth);
                 fleet.cargo.pop = Math.max(0, fleet.cargo.pop + growth);
+            } else {
+                const baseDeathRate = state.rules?.population?.inTransitDeathRate ?? 0.02;
+                const deathRate = raceModifiers.inTransitDeathRate > 0
+                    ? raceModifiers.inTransitDeathRate
+                    : baseDeathRate;
+                if (deathRate > 0) {
+                    const deaths = Math.floor(fleet.cargo.pop * deathRate);
+                    fleet.cargo.pop = Math.max(0, fleet.cargo.pop - deaths);
+                }
             }
         }
         if (move.arrived) {
@@ -1131,7 +1142,9 @@ const resolveCombat = (state) => {
                 const raceModifiers = resolveRaceModifiers(getRaceForEmpire(state, empireId)).modifiers;
                 return {
                     ...techModifiers,
-                    regeneratingShields: raceModifiers.regeneratingShields
+                    regeneratingShields: raceModifiers.regeneratingShields,
+                    groundCombatBonus: raceModifiers.groundCombatBonus,
+                    noPlanetaryDefenses: raceModifiers.noPlanetaryDefenses
                 };
             },
             state.rng
@@ -1206,7 +1219,7 @@ const resolveVisibility = (state) => {
             .slice()
             .sort((a, b) => a.id - b.id)
             .forEach(star => {
-                const intelState = getIntelState(scanners, star);
+                const intelState = getIntelState(scanners, star, 0, !raceModifiers.noAdvancedScanners);
                 const knownEntry = planetKnowledge[star.id];
                 starVisibility[star.id] = intelState;
                 if (intelState !== "none") {
@@ -1240,7 +1253,7 @@ const resolveVisibility = (state) => {
             const cloak = getFleetCloakPercent(state, fleet);
             const intelState = fleet.owner === playerId
                 ? "penetrated"
-                : getIntelState(scanners, fleet, cloak);
+                : getIntelState(scanners, fleet, cloak, !raceModifiers.noAdvancedScanners);
             fleetVisibility[fleet.id] = intelState;
             if (playerId === 1) {
                 fleet.intelState = intelState;
@@ -1251,7 +1264,7 @@ const resolveVisibility = (state) => {
         state.packets.forEach(packet => {
             const intelState = packet.owner === playerId
                 ? "penetrated"
-                : getIntelState(scanners, packet, packetCloak);
+                : getIntelState(scanners, packet, packetCloak, !raceModifiers.noAdvancedScanners);
             packetVisibility[packet.id] = intelState;
         });
 
@@ -1263,7 +1276,7 @@ const resolveVisibility = (state) => {
             if (minefield.visibility === "all" || minefield.ownerEmpireId === playerId) {
                 intelState = "penetrated";
             } else {
-                intelState = getIntelState(scanners, minefield.center, hiddenFieldCloak);
+                intelState = getIntelState(scanners, minefield.center, hiddenFieldCloak, !raceModifiers.noAdvancedScanners);
             }
             if (intelState === "none") {
                 return;
@@ -1289,7 +1302,7 @@ const resolveVisibility = (state) => {
             state.wormholeIntel[playerId] = [];
         }
         state.wormholes.forEach(wormhole => {
-            const intelState = getIntelState(scanners, wormhole.entry || wormhole, hiddenFieldCloak);
+            const intelState = getIntelState(scanners, wormhole.entry || wormhole, hiddenFieldCloak, !raceModifiers.noAdvancedScanners);
             if (intelState === "none") {
                 return;
             }
