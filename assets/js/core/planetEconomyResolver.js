@@ -8,8 +8,10 @@ const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const BASE_MAX_POP = 1500000;
 const BASE_POP_GROWTH = 1.02;
 const POP_OUTPUT_DIVISOR = 1000;
-const MINE_OUTPUT_DIVISOR = 120;
-const MINERAL_ALCHEMY_RATE = 2;
+const BASE_MINING_RATE = 1;
+const BASE_DEPLETION_YEARS = 12500;
+const HOMEWORLD_DEPLETION_FLOOR = 30;
+const STANDARD_DEPLETION_FLOOR = 1;
 const DEFAULT_MINERAL_RATIO = { i: 0.4, b: 0.3, g: 0.3 };
 
 const normalizeStarEconomy = (star) => {
@@ -36,6 +38,8 @@ const getPlanetSizeValue = (star) => {
     }
     return 100;
 };
+
+const isHomeworld = (star) => star?.id === 0 || star?.name === "HOMEWORLD";
 
 const getMaxPopulationMultiplier = (race, raceModifiers) => {
     const baseMultiplier = raceModifiers?.maxPopulationMultiplier || 1;
@@ -144,6 +148,29 @@ const applyTerraforming = (star, techModifiers, raceModifiers) => {
     }
 };
 
+const shouldAutoBuild = (star, buildKind) => {
+    if (!buildKind) {
+        return false;
+    }
+    if (buildKind === "mine" || buildKind === "factory") {
+        return star.pop > 0;
+    }
+    if (buildKind === "terraform") {
+        return Boolean(star.terraforming?.active && star.terraforming?.target);
+    }
+    return false;
+};
+
+const applyConcentrationDepletion = (star, type, floorYears) => {
+    const concentration = star.concentration?.[type] ?? 0;
+    if (concentration <= 0 || star.mines <= 0) {
+        return;
+    }
+    const yearsToDrop = Math.max(floorYears, BASE_DEPLETION_YEARS / concentration / star.mines);
+    const depletion = 1 / yearsToDrop;
+    star.concentration[type] = Math.max(0, concentration - depletion);
+};
+
 const resolveQueue = ({ state, star, productionPoints, raceModifiers }) => {
     const economy = state.economy?.[star.owner];
     if (!economy) {
@@ -151,6 +178,12 @@ const resolveQueue = ({ state, star, productionPoints, raceModifiers }) => {
     }
     if (!star.queue && star.autoBuild) {
         const buildKind = star.autoBuild.kind;
+        if (!shouldAutoBuild(star, buildKind)) {
+            return;
+        }
+        if (buildKind === "terraform") {
+            return;
+        }
         const count = Math.max(1, star.autoBuild.count || 1);
         const structure = DB.structures?.[buildKind];
         if (structure) {
@@ -189,16 +222,13 @@ const resolveQueue = ({ state, star, productionPoints, raceModifiers }) => {
         return;
     }
     const ratios = getMineralRatios(star.queue);
-    let progress = desiredProgress;
-    let result = null;
-    while (progress > 0) {
-        result = ensureMineralsForProgress(economy.mineralStock, ratios, progress, raceModifiers?.mineralAlchemyRate || 0);
-        if (result.hasEnough) {
-            break;
-        }
-        progress -= 1;
-    }
-    if (!result || progress <= 0 || !result.hasEnough) {
+    const result = ensureMineralsForProgress(
+        economy.mineralStock,
+        ratios,
+        desiredProgress,
+        raceModifiers?.mineralAlchemyRate || 0
+    );
+    if (!result || !result.hasEnough) {
         return;
     }
     economy.mineralStock = {
@@ -206,7 +236,7 @@ const resolveQueue = ({ state, star, productionPoints, raceModifiers }) => {
         b: result.adjusted.b - result.required.b,
         g: result.adjusted.g - result.required.g
     };
-    star.queue.done += progress;
+    star.queue.done += desiredProgress;
     if (star.queue.done >= star.queue.cost) {
         if (star.queue.type === "ship") {
             const fleetId = state.nextFleetId++;
@@ -287,18 +317,19 @@ export const resolvePlanetEconomy = (state) => {
             economy.credits += resources;
 
             const miningMultiplier = raceModifiers.miningRateMultiplier || 1;
-            const iGain = Math.floor((star.mines * star.concentration.i * miningMultiplier) / MINE_OUTPUT_DIVISOR);
-            const bGain = Math.floor((star.mines * star.concentration.b * miningMultiplier) / MINE_OUTPUT_DIVISOR);
-            const gGain = Math.floor((star.mines * star.concentration.g * miningMultiplier) / MINE_OUTPUT_DIVISOR);
+            const miningRate = BASE_MINING_RATE * miningMultiplier;
+            const iGain = Math.floor(miningRate * (star.concentration.i / 100) * star.mines);
+            const bGain = Math.floor(miningRate * (star.concentration.b / 100) * star.mines);
+            const gGain = Math.floor(miningRate * (star.concentration.g / 100) * star.mines);
 
             economy.mineralStock.i += iGain;
             economy.mineralStock.b += bGain;
             economy.mineralStock.g += gGain;
 
-            const depletionScale = 0.05;
-            star.concentration.i = Math.max(0, star.concentration.i - Math.ceil(iGain * depletionScale));
-            star.concentration.b = Math.max(0, star.concentration.b - Math.ceil(bGain * depletionScale));
-            star.concentration.g = Math.max(0, star.concentration.g - Math.ceil(gGain * depletionScale));
+            const depletionFloor = isHomeworld(star) ? HOMEWORLD_DEPLETION_FLOOR : STANDARD_DEPLETION_FLOOR;
+            applyConcentrationDepletion(star, "i", depletionFloor);
+            applyConcentrationDepletion(star, "b", depletionFloor);
+            applyConcentrationDepletion(star, "g", depletionFloor);
 
             resolveQueue({ state, star, productionPoints, raceModifiers });
 
