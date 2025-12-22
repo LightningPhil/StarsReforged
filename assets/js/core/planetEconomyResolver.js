@@ -148,7 +148,6 @@ const getMaxInstallations = (pop, per10k) => {
     }
     return Math.max(0, Math.floor((pop / 10000) * per10k));
 };
-};
 
 const applyTerraforming = (star, techModifiers, raceModifiers) => {
     if (!star.terraforming?.active || !star.terraforming?.target) {
@@ -189,7 +188,7 @@ const applyConcentrationDepletion = (star, type, floorYears) => {
     if (concentration <= 0 || star.mines <= 0) {
         return;
     }
-    const yearsToDrop = Math.max(floorYears, BASE_DEPLETION_YEARS / concentration / star.mines);
+    const yearsToDrop = Math.max(floorYears, BASE_DEPLETION_YEARS / (concentration * star.mines));
     const depletion = 1 / yearsToDrop;
     star.concentration[type] = Math.max(0, concentration - depletion);
 };
@@ -366,18 +365,18 @@ export const resolvePlanetEconomy = (state) => {
                 star.mines = Math.min(star.mines, maxMines);
             }
             const effectiveFactories = raceModifiers.noFactories ? 0 : Math.min(star.factories, maxFactories);
-            const productionPoints = Math.max(0, (alternateReality ? 0 : adjustedPopIncome) + (effectiveFactories * economyRules.resPerFactory));
+            let resources = adjustedPopIncome + (effectiveFactories * economyRules.resPerFactory);
+            if (alternateReality) {
+                const energyLevel = techState?.fields?.ENER?.level ?? 0;
+                resources = Math.floor((star.pop * Math.max(1, energyLevel)) / POP_OUTPUT_DIVISOR);
+            }
+            const productionPoints = Math.max(0, alternateReality ? resources : resources);
 
             const economy = state.economy?.[star.owner];
             if (!economy) {
                 return;
             }
 
-            let resources = adjustedPopIncome + (effectiveFactories * economyRules.resPerFactory);
-            if (alternateReality) {
-                const energyLevel = techState?.fields?.ENER?.level ?? 0;
-                resources = Math.floor((star.pop * Math.max(1, energyLevel)) / POP_OUTPUT_DIVISOR);
-            }
             if (star.owner === 1) {
                 taxTotal += popIncome;
                 industrialOutput += productionPoints;

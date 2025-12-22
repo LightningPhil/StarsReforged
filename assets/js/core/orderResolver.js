@@ -317,6 +317,48 @@ const resolveSweepMines = (state, order) => {
     state.minefieldSweepOrders.push({ fleetId: fleet.id, minefieldId });
 };
 
+const resolveDetonateMines = (state, order) => {
+    const minefieldId = order.payload?.minefieldId;
+    const minefield = state.minefields.find(field => field.id === minefieldId);
+    if (!minefield || minefield.ownerEmpireId !== order.issuerId) {
+        logOrderError(state, `Invalid DETONATE_MINES order from ${order.issuerId}.`);
+        return;
+    }
+    const raceModifiers = resolveRaceModifiers(getRaceForEmpire(state, order.issuerId)).modifiers;
+    if (!raceModifiers.minefieldDetonation) {
+        logOrderError(state, "Detonation is unavailable for this race.");
+        return;
+    }
+    if (!state.minefieldDetonationOrders) {
+        state.minefieldDetonationOrders = [];
+    }
+    state.minefieldDetonationOrders.push({
+        minefieldId: minefield.id,
+        ownerEmpireId: minefield.ownerEmpireId
+    });
+};
+
+const resolveUpdateBattlePlan = (state, order) => {
+    const fleet = getFleetById(state, order.payload?.fleetId);
+    if (!fleet || fleet.owner !== order.issuerId) {
+        logOrderError(state, `Invalid UPDATE_BATTLE_PLAN order from ${order.issuerId}.`);
+        return;
+    }
+    const primary = order.payload?.primary;
+    const tactic = order.payload?.tactic;
+    if (!primary || !tactic) {
+        logOrderError(state, "Invalid UPDATE_BATTLE_PLAN payload.");
+        return;
+    }
+    const allowedPrimary = new Set(["closest", "weakest", "value", "starbase", "capital"]);
+    const allowedTactics = new Set(["engage", "disengage", "maximize_damage", "balanced", "hold", "close", "retreat", "kite"]);
+    if (!allowedPrimary.has(primary) || !allowedTactics.has(tactic)) {
+        logOrderError(state, "Invalid battle plan configuration.");
+        return;
+    }
+    fleet.battlePlan = { primary, tactic };
+};
+
 const resolveStargateJump = (state, order) => {
     const fleet = getFleetById(state, order.payload?.fleetId);
     const sourcePlanetId = order.payload?.sourcePlanetId;
@@ -528,8 +570,14 @@ export const OrderResolver = {
                 case ORDER_TYPES.SWEEP_MINES:
                     resolveSweepMines(state, order);
                     break;
+                case ORDER_TYPES.DETONATE_MINES:
+                    resolveDetonateMines(state, order);
+                    break;
                 case ORDER_TYPES.STARGATE_JUMP:
                     resolveStargateJump(state, order);
+                    break;
+                case ORDER_TYPES.UPDATE_BATTLE_PLAN:
+                    resolveUpdateBattlePlan(state, order);
                     break;
                 default:
                     logOrderError(state, `Unknown order type ${order.type}.`);

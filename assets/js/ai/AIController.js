@@ -179,118 +179,126 @@ export const AIController = {
     },
 
     runTurn(gameState, playerId, difficulty, options = {}) {
-        const roll = options.roll || ((max) => Math.floor(Math.random() * max));
-        const maxTimeMs = options.maxTimeMs ?? 100;
-        const startTime = Date.now();
-        const orders = [];
-        const profile = {
-            aggression: 0.6,
-            riskTolerance: 0.5,
-            lookaheadDepth: 1,
-            ...difficulty
-        };
-        const aiState = buildAIState(gameState, playerId);
-        const intent = selectIntent(aiState, profile, roll);
+        try {
+            const roll = options.roll || ((max) => Math.floor(Math.random() * max));
+            const maxTimeMs = options.maxTimeMs ?? 100;
+            const startTime = Date.now();
+            const orders = [];
+            const profile = {
+                aggression: 0.6,
+                riskTolerance: 0.5,
+                lookaheadDepth: 1,
+                ...difficulty
+            };
+            const aiState = buildAIState(gameState, playerId);
+            const intent = selectIntent(aiState, profile, roll);
 
-        const economy = gameState.economy?.[playerId];
-        let availableCredits = economy?.credits ?? 0;
-        const designs = this.ensureBasicDesigns(gameState, playerId) || [];
-        const colonizerIndex = designs.findIndex(design => design.flags.includes("colonize"));
-        const raiderIndex = designs
-            .map((design, index) => ({ design, index }))
-            .filter(entry => !entry.design.flags.includes("colonize"))
-            .sort((a, b) => a.design.cost - b.design.cost)[0]?.index ?? -1;
+            const economy = gameState.economy?.[playerId];
+            let availableCredits = economy?.credits ?? 0;
+            const designs = this.ensureBasicDesigns(gameState, playerId) || [];
+            const colonizerIndex = designs.findIndex(design => design.flags.includes("colonize"));
+            const raiderIndex = designs
+                .map((design, index) => ({ design, index }))
+                .filter(entry => !entry.design.flags.includes("colonize"))
+                .sort((a, b) => a.design.cost - b.design.cost)[0]?.index ?? -1;
 
-        aiState.ownedStars
-            .filter(star => !star.queue)
-            .forEach(star => {
+            aiState.ownedStars
+                .filter(star => !star.queue)
+                .forEach(star => {
+                    if (Date.now() - startTime > maxTimeMs) {
+                        return;
+                    }
+                    const defenseNeed = getDefenseNeed(star);
+                    if (defenseNeed) {
+                        const structure = DB.structures?.[defenseNeed.kind];
+                        const cost = structure ? structure.cost * defenseNeed.count : null;
+                        if (structure && availableCredits >= cost) {
+                            orders.push(createBuildStructureOrder(star, defenseNeed.kind, defenseNeed.count, playerId));
+                            availableCredits -= cost;
+                            return;
+                        }
+                    }
+                    if (colonizerIndex >= 0 && !gameState.fleets.some(fleet => fleet.owner === playerId && fleet.design.flags.includes("colonize"))) {
+                        const cost = designs[colonizerIndex]?.cost ?? 0;
+                        if (availableCredits >= cost) {
+                            orders.push(createBuildOrder(star, designs[colonizerIndex].designId, playerId));
+                            availableCredits -= cost;
+                        }
+                        return;
+                    }
+                    if (raiderIndex >= 0 && availableCredits >= designs[raiderIndex]?.cost) {
+                        orders.push(createBuildOrder(star, designs[raiderIndex].designId, playerId));
+                        availableCredits -= designs[raiderIndex]?.cost ?? 0;
+                    }
+                });
+
+            const idleFleets = gameState.fleets.filter(fleet => fleet.owner === playerId && !fleet.dest);
+            idleFleets.forEach(fleet => {
                 if (Date.now() - startTime > maxTimeMs) {
                     return;
                 }
-                const defenseNeed = getDefenseNeed(star);
-                if (defenseNeed) {
-                    const structure = DB.structures?.[defenseNeed.kind];
-                    const cost = structure ? structure.cost * defenseNeed.count : null;
-                    if (structure && availableCredits >= cost) {
-                        orders.push(createBuildStructureOrder(star, defenseNeed.kind, defenseNeed.count, playerId));
-                        availableCredits -= cost;
-                        return;
-                    }
-                }
-                if (colonizerIndex >= 0 && !gameState.fleets.some(fleet => fleet.owner === playerId && fleet.design.flags.includes("colonize"))) {
-                    const cost = designs[colonizerIndex]?.cost ?? 0;
-                    if (availableCredits >= cost) {
-                        orders.push(createBuildOrder(star, designs[colonizerIndex].designId, playerId));
-                        availableCredits -= cost;
-                    }
+                const blockingMinefield = aiState.visibleMinefields.find(field => (
+                    field.ownerEmpireId && field.ownerEmpireId !== playerId && dist(fleet, field.center) <= field.radius
+                ));
+                if (blockingMinefield && fleet.mineSweepingStrength > 0) {
+                    orders.push(createSweepOrder(fleet, blockingMinefield.id, playerId));
                     return;
                 }
-                if (raiderIndex >= 0 && availableCredits >= designs[raiderIndex]?.cost) {
-                    orders.push(createBuildOrder(star, designs[raiderIndex].designId, playerId));
-                    availableCredits -= designs[raiderIndex]?.cost ?? 0;
+                if (fleet.design.flags.includes("colonize")) {
+                    orders.push(createColonizeOrder(fleet, playerId));
+                }
+                let targetPool = [];
+                const habitableNeutral = aiState.neutralStars.filter(isGreenWorld);
+                if (intent === "EXPAND") {
+                    targetPool = habitableNeutral;
+                } else if (intent === "ATTACK") {
+                    targetPool = aiState.enemyStars;
+                } else if (intent === "DEFEND") {
+                    targetPool = aiState.ownedStars;
+                } else {
+                    targetPool = habitableNeutral.length ? habitableNeutral : aiState.enemyStars;
+                }
+                const target = pickTarget(fleet, targetPool, profile.lookaheadDepth, roll);
+                if (target) {
+                    const sourceStar = gameState.stars.find(star => dist(star, fleet) < 12);
+                    if (sourceStar?.hasStargate && target.hasStargate) {
+                        const distance = dist(sourceStar, target);
+                        if (distance <= sourceStar.stargateRange && fleet.mass <= sourceStar.stargateMassLimit) {
+                            orders.push(createStargateOrder(fleet, sourceStar.id, target.id, playerId));
+                            return;
+                        }
+                    }
+                    const unsafe = aiState.visibleMinefields.some(field => (
+                        isUnsafeMinefield(field, playerId)
+                        && lineIntersectsCircle(fleet, target, field.center, field.radius)
+                    ));
+                    if (!unsafe || targetPool.length === 1) {
+                        orders.push(createMoveOrder(fleet, target, playerId));
+                        return;
+                    }
+                    const safeTarget = targetPool.find(candidate => !aiState.visibleMinefields.some(field => (
+                        isUnsafeMinefield(field, playerId)
+                        && lineIntersectsCircle(fleet, candidate, field.center, field.radius)
+                    )));
+                    if (safeTarget) {
+                        orders.push(createMoveOrder(fleet, safeTarget, playerId));
+                    } else {
+                        orders.push(createMoveOrder(fleet, target, playerId));
+                    }
                 }
             });
 
-        const idleFleets = gameState.fleets.filter(fleet => fleet.owner === playerId && !fleet.dest);
-        idleFleets.forEach(fleet => {
-            if (Date.now() - startTime > maxTimeMs) {
-                return;
-            }
-            const blockingMinefield = aiState.visibleMinefields.find(field => (
-                field.ownerEmpireId && field.ownerEmpireId !== playerId && dist(fleet, field.center) <= field.radius
-            ));
-            if (blockingMinefield && fleet.mineSweepingStrength > 0) {
-                orders.push(createSweepOrder(fleet, blockingMinefield.id, playerId));
-                return;
-            }
-            if (fleet.design.flags.includes("colonize")) {
-                orders.push(createColonizeOrder(fleet, playerId));
-            }
-            let targetPool = [];
-            const habitableNeutral = aiState.neutralStars.filter(isGreenWorld);
-            if (intent === "EXPAND") {
-                targetPool = habitableNeutral;
-            } else if (intent === "ATTACK") {
-                targetPool = aiState.enemyStars;
-            } else if (intent === "DEFEND") {
-                targetPool = aiState.ownedStars;
-            } else {
-                targetPool = habitableNeutral.length ? habitableNeutral : aiState.enemyStars;
-            }
-            const target = pickTarget(fleet, targetPool, profile.lookaheadDepth, roll);
-            if (target) {
-                const sourceStar = gameState.stars.find(star => dist(star, fleet) < 12);
-                if (sourceStar?.hasStargate && target.hasStargate) {
-                    const distance = dist(sourceStar, target);
-                    if (distance <= sourceStar.stargateRange && fleet.mass <= sourceStar.stargateMassLimit) {
-                        orders.push(createStargateOrder(fleet, sourceStar.id, target.id, playerId));
-                        return;
-                    }
-                }
-                const unsafe = aiState.visibleMinefields.some(field => (
-                    isUnsafeMinefield(field, playerId)
-                    && lineIntersectsCircle(fleet, target, field.center, field.radius)
-                ));
-                if (!unsafe || targetPool.length === 1) {
-                    orders.push(createMoveOrder(fleet, target, playerId));
-                    return;
-                }
-                const safeTarget = targetPool.find(candidate => !aiState.visibleMinefields.some(field => (
-                    isUnsafeMinefield(field, playerId)
-                    && lineIntersectsCircle(fleet, candidate, field.center, field.radius)
-                )));
-                if (safeTarget) {
-                    orders.push(createMoveOrder(fleet, safeTarget, playerId));
-                } else {
-                    orders.push(createMoveOrder(fleet, target, playerId));
-                }
-            }
-        });
-
-        return {
-            orders,
-            intent,
-            aiState
-        };
+            return {
+                orders,
+                intent,
+                aiState
+            };
+        } catch (error) {
+            return {
+                orders: [],
+                intent: "HOLD",
+                aiState: { error: error?.message || "AI failure" }
+            };
+        }
     }
 };

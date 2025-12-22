@@ -1231,6 +1231,7 @@ export const Game = {
                 x: fleet.x,
                 y: fleet.y,
                 dest: fleet.dest ? { ...fleet.dest } : null,
+                battlePlan: fleet.battlePlan ? { ...fleet.battlePlan } : null,
                 design: fleet.design ? { ...fleet.design, finalStats: { ...fleet.design.finalStats } } : null,
                 mineSweepingStrength: fleet.mineSweepingStrength,
                 mass: fleet.mass

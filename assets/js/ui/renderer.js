@@ -342,15 +342,16 @@ export const Renderer = {
     drawStars: function(ctx) {
         Game.stars.forEach(star => {
             const intelEntry = Game.planetKnowledge?.[1]?.[star.id];
-            const isKnown = star.visible || star.known || Boolean(intelEntry);
-            if (!isKnown) {
+            const intelState = star.intelState
+                || (star.visible ? "penetrated" : (star.known || intelEntry ? "scanned" : "none"));
+            if (intelState === "none") {
                 return;
             }
             const isSel = Game.selection && Game.selection.type === 'star' && Game.selection.id === star.id;
-            const info = star.visible ? star : (star.snapshot ?? intelEntry?.snapshot);
-            const hasOldIntel = !star.visible && intelEntry?.turn_seen != null;
+            const info = intelState === "penetrated" ? star : (star.snapshot ?? intelEntry?.snapshot);
+            const hasOldIntel = intelState !== "penetrated" && intelEntry?.turn_seen != null;
             const col = info.owner === 1 ? '#00f0ff' : (info.owner ? '#ff0055' : '#ffffff');
-            const alpha = star.visible ? 1 : 0.35;
+            const alpha = intelState === "penetrated" ? 1 : 0.5;
 
             ctx.fillStyle = col;
             ctx.globalAlpha = alpha;
@@ -378,6 +379,21 @@ export const Renderer = {
                 ctx.arc(star.x, star.y, 12, 0, Math.PI * 2);
                 ctx.stroke();
                 ctx.setLineDash([]);
+                ctx.restore();
+            }
+
+            if (intelState === "scanned") {
+                ctx.save();
+                ctx.strokeStyle = "rgba(255, 255, 255, 0.7)";
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.arc(star.x + 12, star.y - 12, 4, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(star.x + 12, star.y - 12);
+                ctx.lineTo(star.x + 12, star.y - 15);
+                ctx.lineTo(star.x + 14, star.y - 12);
+                ctx.stroke();
                 ctx.restore();
             }
 

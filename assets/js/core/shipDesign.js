@@ -256,6 +256,11 @@ const getRaceTraits = (race) => new Set([
     ...(race?.lesserTraits || [])
 ].filter(Boolean));
 
+const getRequiredTraits = (item) => ([
+    ...(item?.requiresTraits || []),
+    ...(item?.reqTrait ? [item.reqTrait] : [])
+]);
+
 const validateRaceAvailability = (hull, components, raceModifiers, race) => {
     const errors = [];
     if (!raceModifiers) {
@@ -273,8 +278,9 @@ const validateRaceAvailability = (hull, components, raceModifiers, race) => {
     });
 
     const traitSet = getRaceTraits(race);
-    if (hull.requiresTraits?.length && !hull.requiresTraits.every(trait => traitSet.has(trait))) {
-        errors.push(`Hull ${hull.name} requires trait ${hull.requiresTraits.join(", ")}.`);
+    const hullTraits = getRequiredTraits(hull);
+    if (hullTraits.length && !hullTraits.every(trait => traitSet.has(trait))) {
+        errors.push(`Hull ${hull.name} requires trait ${hullTraits.join(", ")}.`);
     }
     components.forEach(component => {
         if (raceModifiers.noMineLayers && component.flags?.includes("minelayer")) {
@@ -283,8 +289,9 @@ const validateRaceAvailability = (hull, components, raceModifiers, race) => {
         if (raceModifiers.noRamscoop && Number.isFinite(component.stats?.freeSpeed) && component.stats.freeSpeed > 0) {
             errors.push(`${component.name} is unavailable for this race.`);
         }
-        if (component.requiresTraits?.length && !component.requiresTraits.every(trait => traitSet.has(trait))) {
-            errors.push(`${component.name} requires trait ${component.requiresTraits.join(", ")}.`);
+        const componentTraits = getRequiredTraits(component);
+        if (componentTraits.length && !componentTraits.every(trait => traitSet.has(trait))) {
+            errors.push(`${component.name} requires trait ${componentTraits.join(", ")}.`);
         }
     });
 
