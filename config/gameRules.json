@@ -7,7 +7,25 @@
   },
   "victory": {
     "economicSupremacyThreshold": 0.6,
-    "maxTurns": 250
+    "planetShareThreshold": 0.6,
+    "productionCapacityShareThreshold": 0.6,
+    "techMilestoneTotal": 30,
+    "scoreThreshold": 2000,
+    "capitalShipCountThreshold": 5,
+    "capitalShipHullIds": ["battleship"],
+    "maxYear": 2600,
+    "maxTurns": 250,
+    "enabled": {
+      "totalAnnihilation": true,
+      "economicSupremacy": true,
+      "planetShare": true,
+      "techMilestones": true,
+      "scoreThreshold": true,
+      "productionCapacity": true,
+      "capitalShips": true,
+      "yearLimit": true,
+      "turnLimit": true
+    }
   },
   "startingResources": {
     "human": {

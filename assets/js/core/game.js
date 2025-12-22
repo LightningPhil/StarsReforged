@@ -6,7 +6,7 @@ import { TurnEngine } from "./turnEngine.js";
 import { AIController } from "../ai/AIController.js";
 import { loadConfig } from "./config.js";
 import { calculateScores, resolveDefeats } from "./gameResolution.js";
-import { VictoryResolver } from "./victoryResolver.js";
+import { getVictoryTypeLabel, VictoryResolver } from "./victoryResolver.js";
 import { loadGameStateFromFiles } from "./loadState.js";
 import {
     adjustAllocationForField,
@@ -973,6 +973,12 @@ export const Game = {
         this.gameResult = outcome;
         this.turnEvents.push({ type: "GAME_OVER", turn: this.turnCount });
         this.turnEvents.push({ type: "VICTORY_DECLARED", winnerId: outcome.winnerEmpireId, reason: outcome.victoryType });
+        const winnerName = outcome.winnerEmpireId === 1
+            ? "Ashen Arc"
+            : outcome.winnerEmpireId === 2
+                ? "Crimson Directorate"
+                : `Empire ${outcome.winnerEmpireId}`;
+        this.logMsg(`${winnerName} claims victory (${getVictoryTypeLabel(outcome.victoryType)}).`, "System", "high");
         if (outcome.winnerEmpireId === 1) {
             this.logMsg("All systems unified under your banner. Victory achieved.", "System", "high");
         } else {
