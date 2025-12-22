@@ -323,6 +323,11 @@ export const deserializeUniverseState = (state) => {
         fleet.mineSweepingStrength = dto.mineSweepingStrength ?? fleet.mineSweepingStrength;
         fleet.mineHitpoints = dto.mineHitpoints ?? fleet.mineHitpoints;
         fleet.mass = dto.mass ?? fleet.mass;
+        fleet.cargoMass = dto.cargoMass ?? fleet.cargoMass;
+        fleet.fuelPool = dto.fuelPool ?? fleet.fuelPool;
+        if (Number.isFinite(fleet.fuelPool) && Number.isFinite(fleet.fuel)) {
+            fleet.fuel = Math.min(fleet.fuel, fleet.fuelPool);
+        }
         fleet.colonize = dto.colonize || false;
         return fleet;
     });

@@ -85,7 +85,10 @@ const resolveScrapFleet = (state, order) => {
         logOrderError(state, `Invalid SCRAP_FLEET order from ${order.issuerId}.`);
         return;
     }
-    state.fleets = state.fleets.filter(item => item.id !== fleet.id);
+    if (!state.fleetScrapOrders) {
+        state.fleetScrapOrders = [];
+    }
+    state.fleetScrapOrders.push({ fleetId: fleet.id });
 };
 
 const resolveBuildShips = (state, order) => {
@@ -340,6 +343,81 @@ const resolveStargateJump = (state, order) => {
     state.stargateOrders.push({ fleetId: fleet.id, sourcePlanetId, destinationPlanetId });
 };
 
+const resolveMergeFleet = (state, order) => {
+    const sourceFleetId = order.payload?.sourceFleetId ?? order.payload?.fleetId;
+    const targetFleetId = order.payload?.targetFleetId;
+    const source = getFleetById(state, sourceFleetId);
+    const target = getFleetById(state, targetFleetId);
+    if (!source || !target || source.owner !== order.issuerId || target.owner !== order.issuerId) {
+        logOrderError(state, `Invalid MERGE_FLEET order from ${order.issuerId}.`);
+        return;
+    }
+    if (source.id === target.id) {
+        logOrderError(state, `MERGE_FLEET requires two distinct fleets.`);
+        return;
+    }
+    if (!state.fleetMergeOrders) {
+        state.fleetMergeOrders = [];
+    }
+    state.fleetMergeOrders.push({ sourceFleetId: source.id, targetFleetId: target.id });
+};
+
+const resolveSplitFleet = (state, order) => {
+    const fleet = getFleetById(state, order.payload?.fleetId);
+    const stacks = order.payload?.stacks;
+    if (!fleet || fleet.owner !== order.issuerId) {
+        logOrderError(state, `Invalid SPLIT_FLEET order from ${order.issuerId}.`);
+        return;
+    }
+    if (!Array.isArray(stacks) || !stacks.length) {
+        logOrderError(state, `SPLIT_FLEET requires stacks to split.`);
+        return;
+    }
+    if (!state.fleetSplitOrders) {
+        state.fleetSplitOrders = [];
+    }
+    state.fleetSplitOrders.push({
+        fleetId: fleet.id,
+        name: order.payload?.name,
+        stacks: stacks.map(stack => ({
+            designId: stack?.designId,
+            count: Math.max(0, Math.floor(stack?.count || 0))
+        })),
+        cargo: order.payload?.cargo || null,
+        fuel: order.payload?.fuel
+    });
+};
+
+const resolveTransferFleet = (state, order) => {
+    const sourceFleetId = order.payload?.sourceFleetId ?? order.payload?.fromFleetId;
+    const targetFleetId = order.payload?.targetFleetId ?? order.payload?.toFleetId;
+    const source = getFleetById(state, sourceFleetId);
+    const target = getFleetById(state, targetFleetId);
+    if (!source || !target || source.owner !== order.issuerId || target.owner !== order.issuerId) {
+        logOrderError(state, `Invalid TRANSFER_FLEET order from ${order.issuerId}.`);
+        return;
+    }
+    if (source.id === target.id) {
+        logOrderError(state, `TRANSFER_FLEET requires two distinct fleets.`);
+        return;
+    }
+    if (!state.fleetTransferOrders) {
+        state.fleetTransferOrders = [];
+    }
+    state.fleetTransferOrders.push({
+        sourceFleetId: source.id,
+        targetFleetId: target.id,
+        stacks: Array.isArray(order.payload?.stacks)
+            ? order.payload.stacks.map(stack => ({
+                designId: stack?.designId,
+                count: Math.max(0, Math.floor(stack?.count || 0))
+            }))
+            : null,
+        cargo: order.payload?.cargo || null,
+        fuel: order.payload?.fuel
+    });
+};
+
 const resolveResearch = (state, order) => {
     const techState = getTechnologyStateForEmpire(state, order.issuerId);
     if (!techState) {
@@ -381,6 +459,15 @@ export const OrderResolver = {
                     break;
                 case ORDER_TYPES.SCRAP_FLEET:
                     resolveScrapFleet(state, order);
+                    break;
+                case ORDER_TYPES.MERGE_FLEET:
+                    resolveMergeFleet(state, order);
+                    break;
+                case ORDER_TYPES.SPLIT_FLEET:
+                    resolveSplitFleet(state, order);
+                    break;
+                case ORDER_TYPES.TRANSFER_FLEET:
+                    resolveTransferFleet(state, order);
                     break;
                 case ORDER_TYPES.BUILD_SHIPS:
                     resolveBuildShips(state, order);

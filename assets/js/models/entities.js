@@ -116,13 +116,14 @@ class Fleet {
             ? shipStacks.map(stack => ({ ...stack }))
             : [{ designId: this.designId, count: 1 }];
         this.shipStacks = this.shipStacks.map(stack => {
-            if (stack.stats) {
-                return stack;
-            }
-            if (stack.designId === this.designId) {
+            const normalized = {
+                ...stack,
+                count: Math.max(0, Math.floor(stack.count || 1))
+            };
+            if (normalized.designId === this.designId) {
                 return {
-                    ...stack,
-                    stats: {
+                    ...normalized,
+                    stats: normalized.stats || {
                         armor: design.armor,
                         structure: design.structure,
                         shields: design.shields,
@@ -136,11 +137,28 @@ class Fleet {
                         gattling: design.gattling ?? 0,
                         sapper: design.sapper ?? 0,
                         speed: design.speed
-                    }
+                    },
+                    mass: normalized.mass ?? design.mass,
+                    cargoCapacity: normalized.cargoCapacity ?? (design.cargo || 0),
+                    fuelCapacity: normalized.fuelCapacity ?? (design.fuel || 0)
                 };
             }
-            return stack;
+            return normalized;
         });
+        const stackTotals = this.shipStacks.reduce((totals, stack) => {
+            const count = stack.count || 0;
+            totals.mass += (stack.mass || 0) * count;
+            totals.cargoCapacity += (stack.cargoCapacity || 0) * count;
+            totals.fuelPool += (stack.fuelCapacity || 0) * count;
+            return totals;
+        }, { mass: 0, cargoCapacity: 0, fuelPool: 0 });
+        this.cargoCapacity = stackTotals.cargoCapacity || this.cargoCapacity;
+        this.fuelPool = stackTotals.fuelPool || this.fuel;
+        if (!Number.isFinite(this.fuel)) {
+            this.fuel = this.fuelPool;
+        } else if (Number.isFinite(this.fuelPool) && this.fuelPool > 0) {
+            this.fuel = Math.min(this.fuel, this.fuelPool);
+        }
         this.armor = design.armor;
         this.structure = design.structure;
         this.shields = design.shields;
@@ -148,13 +166,21 @@ class Fleet {
         this.mineLayingCapacity = design.mineLayingCapacity || 0;
         this.mineSweepingStrength = design.mineSweepingStrength || 0;
         this.mineHitpoints = design.mineHitpoints || (design.armor + design.structure);
-        this.mass = design.mass;
+        this.mass = stackTotals.mass || design.mass;
+        this.cargoMass = (this.cargo?.i || 0)
+            + (this.cargo?.b || 0)
+            + (this.cargo?.g || 0)
+            + (this.cargo?.pop || 0);
         this.hp = this.armor + this.structure + this.shields;
         this.cloak = design.cloak ?? design.finalStats?.cloak ?? 0;
     }
 
     get speed() {
-        return Math.max(15, this.design.speed * 12);
+        const stackSpeeds = (this.shipStacks || [])
+            .map(stack => stack.stats?.speed)
+            .filter(speed => Number.isFinite(speed));
+        const minSpeed = stackSpeeds.length ? Math.min(...stackSpeeds) : this.design.speed;
+        return Math.max(15, minSpeed * 12);
     }
 
     get scan() {

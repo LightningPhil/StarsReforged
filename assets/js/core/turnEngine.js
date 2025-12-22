@@ -69,6 +69,8 @@ const cloneFleet = (fleet) => {
     clone.mineSweepingStrength = fleet.mineSweepingStrength;
     clone.mineHitpoints = fleet.mineHitpoints;
     clone.mass = fleet.mass;
+    clone.cargoMass = fleet.cargoMass;
+    clone.fuelPool = fleet.fuelPool;
     clone.colonize = fleet.colonize || false;
     return clone;
 };
@@ -163,6 +165,10 @@ const cloneGameState = (state) => ({
     minefieldLayingOrders: [],
     minefieldSweepOrders: [],
     stargateOrders: [],
+    fleetMergeOrders: [],
+    fleetSplitOrders: [],
+    fleetTransferOrders: [],
+    fleetScrapOrders: [],
     waypointTaskQueue: [],
     orderErrors: []
 });
@@ -184,12 +190,14 @@ const stepToward = (entity, destX, destY, speed) => {
 
 const getWarpSpeed = (state, fleet) => {
     const modifiers = getTechnologyModifiers(getTechnologyStateForEmpire(state, fleet.owner));
-    return Math.max(1, Math.floor(fleet.design.speed * modifiers.shipSpeed));
+    const totals = getFleetStackTotals(state, fleet);
+    const baseSpeed = totals.minSpeed ?? fleet.design.speed;
+    return Math.max(1, Math.floor(baseSpeed * modifiers.shipSpeed));
 };
 
-const getFleetSpeed = (state, fleet) => {
-    const warpSpeed = getWarpSpeed(state, fleet);
-    return Math.max(10, Math.floor((warpSpeed ** 2) * 10));
+const getFleetSpeed = (state, fleet, warpSpeed = null) => {
+    const resolvedWarpSpeed = warpSpeed ?? getWarpSpeed(state, fleet);
+    return Math.max(10, Math.floor((resolvedWarpSpeed ** 2) * 10));
 };
 
 const getDesignForStack = (state, fleet, stack) => {
@@ -201,6 +209,57 @@ const getDesignForStack = (state, fleet, stack) => {
         }
     }
     return fleet.design;
+};
+
+const getFleetCargoMass = (fleet) => {
+    const cargo = fleet.cargo || {};
+    return (cargo.i || 0) + (cargo.b || 0) + (cargo.g || 0) + (cargo.pop || 0);
+};
+
+const getFleetStackTotals = (state, fleet) => {
+    const stacks = Array.isArray(fleet.shipStacks) && fleet.shipStacks.length
+        ? fleet.shipStacks
+        : [{ designId: fleet.designId, count: 1 }];
+    return stacks.reduce((totals, stack) => {
+        const count = Math.max(0, Math.floor(stack.count || 1));
+        const design = getDesignForStack(state, fleet, stack);
+        const mass = design?.finalStats?.mass ?? design?.mass ?? 0;
+        const cargo = design?.finalStats?.cargo ?? design?.cargo ?? 0;
+        const fuel = design?.finalStats?.fuel ?? design?.fuel ?? 0;
+        const speed = design?.finalStats?.speed ?? design?.speed ?? 0;
+        const cloak = design?.finalStats?.cloak ?? design?.cloak ?? 0;
+        totals.shipMass += mass * count;
+        totals.cargoCapacity += cargo * count;
+        totals.fuelPool += fuel * count;
+        totals.minSpeed = totals.minSpeed === null ? speed : Math.min(totals.minSpeed, speed);
+        totals.cloakPoints += cloak * mass * count;
+        if (design?.flags?.includes("ramscoop")) {
+            totals.hasRamscoop = true;
+        }
+        return totals;
+    }, {
+        shipMass: 0,
+        cargoCapacity: 0,
+        fuelPool: 0,
+        minSpeed: null,
+        cloakPoints: 0,
+        hasRamscoop: false
+    });
+};
+
+const updateFleetTotals = (state, fleet) => {
+    const totals = getFleetStackTotals(state, fleet);
+    const cargoMass = getFleetCargoMass(fleet);
+    fleet.mass = totals.shipMass;
+    fleet.cargoMass = cargoMass;
+    fleet.cargoCapacity = totals.cargoCapacity;
+    fleet.fuelPool = totals.fuelPool;
+    if (!Number.isFinite(fleet.fuel)) {
+        fleet.fuel = totals.fuelPool;
+    } else if (Number.isFinite(totals.fuelPool) && totals.fuelPool > 0) {
+        fleet.fuel = Math.min(fleet.fuel, totals.fuelPool);
+    }
+    return { totals, cargoMass, totalMass: totals.shipMass + cargoMass };
 };
 
 const getFleetScannerStrength = (state, fleet) => {
@@ -219,22 +278,12 @@ const getFleetScannerStrength = (state, fleet) => {
 };
 
 const getFleetCloakPercent = (state, fleet) => {
-    const stacks = fleet.shipStacks || [];
-    if (!stacks.length) {
-        return fleet.design?.cloak ?? fleet.design?.finalStats?.cloak ?? 0;
-    }
-    const totals = stacks.reduce((acc, stack) => {
-        const design = getDesignForStack(state, fleet, stack);
-        const cloak = design?.finalStats?.cloak ?? design?.cloak ?? 0;
-        const count = stack?.count || 1;
-        acc.cloak += cloak * count;
-        acc.count += count;
-        return acc;
-    }, { cloak: 0, count: 0 });
-    if (!totals.count) {
+    const totals = getFleetStackTotals(state, fleet);
+    const totalMass = totals.shipMass + getFleetCargoMass(fleet);
+    if (!totalMass) {
         return 0;
     }
-    return Math.round(totals.cloak / totals.count);
+    return Math.round(totals.cloakPoints / totalMass);
 };
 
 const getFleetScanRange = (state, fleet) => {
@@ -288,21 +337,274 @@ const createPlanetSnapshot = (star) => ({
     stargateTechLevel: star.stargateTechLevel
 });
 
-const calculateFuelUsage = (fleet, warpSpeed, distance) => {
+const calculateFuelUsage = (totalMass, warpSpeed, distance) => {
     if (distance <= 0) {
         return 0;
     }
-    const massFactor = Math.max(1, Math.ceil(fleet.mass / 100));
+    const massFactor = Math.max(1, Math.ceil(totalMass / 100));
     const fuelPerLy = Math.max(1, Math.ceil((warpSpeed * massFactor) / 2));
     return Math.ceil((distance / 10) * fuelPerLy);
 };
 
-const applyRamscoop = (fleet, distance, fuelUse) => {
-    if (!fleet.design?.flags?.includes("ramscoop")) {
+const applyRamscoop = (fleet, distance, fuelUse, hasRamscoop = false) => {
+    if (!hasRamscoop) {
         return fuelUse;
     }
     const recovered = Math.floor(distance / 40);
     return Math.max(0, fuelUse - recovered);
+};
+
+const buildStackFromDesign = (design, stack) => {
+    if (!design) {
+        return { ...stack };
+    }
+    return {
+        ...stack,
+        stats: stack.stats || {
+            armor: design.armor,
+            structure: design.structure,
+            shields: design.shields,
+            initiative: design.initiative,
+            defense: design.defense,
+            beamDamage: design.beamDamage ?? design.attack ?? 0,
+            torpedoDamage: design.torpedoDamage ?? 0,
+            beamRange: design.beamRange ?? (design.attack > 0 ? 1 : 0),
+            torpedoRange: design.torpedoRange ?? (design.torpedoDamage > 0 ? 2 : 0),
+            bombing: design.bombing ?? 0,
+            gattling: design.gattling ?? 0,
+            sapper: design.sapper ?? 0,
+            speed: design.speed
+        },
+        mass: stack.mass ?? design.mass,
+        cargoCapacity: stack.cargoCapacity ?? (design.cargo || 0),
+        fuelCapacity: stack.fuelCapacity ?? (design.fuel || 0)
+    };
+};
+
+const getDesignById = (state, ownerId, designId) => {
+    const designs = state.shipDesigns?.[ownerId] || [];
+    return designs.find(design => design.designId === designId) || null;
+};
+
+const normalizeFleetStacks = (fleet) => {
+    fleet.shipStacks = (fleet.shipStacks || [])
+        .filter(stack => (stack?.count || 0) > 0)
+        .map(stack => ({ ...stack }));
+};
+
+const addStackShips = (state, fleet, designId, count) => {
+    if (!designId || count <= 0) {
+        return;
+    }
+    const existing = (fleet.shipStacks || []).find(stack => stack.designId === designId);
+    if (existing) {
+        existing.count += count;
+        return;
+    }
+    const design = getDesignById(state, fleet.owner, designId);
+    fleet.shipStacks = fleet.shipStacks || [];
+    fleet.shipStacks.push(buildStackFromDesign(design, { designId, count }));
+};
+
+const removeStackShips = (fleet, designId, count) => {
+    if (!designId || count <= 0) {
+        return 0;
+    }
+    const stack = (fleet.shipStacks || []).find(entry => entry.designId === designId);
+    if (!stack) {
+        return 0;
+    }
+    const removed = Math.min(stack.count || 0, count);
+    stack.count -= removed;
+    return removed;
+};
+
+const resolveFleetMergeOrders = (state) => {
+    const orders = state.fleetMergeOrders || [];
+    if (!orders.length) {
+        return;
+    }
+    const removed = new Set();
+    orders.forEach(order => {
+        const source = state.fleets.find(item => item.id === order.sourceFleetId);
+        const target = state.fleets.find(item => item.id === order.targetFleetId);
+        if (!source || !target || removed.has(source.id) || removed.has(target.id)) {
+            return;
+        }
+        if (dist(source, target) > 12) {
+            state.orderErrors.push(`Fleets must share a location to merge (${source.name}, ${target.name}).`);
+            return;
+        }
+        (source.shipStacks || []).forEach(stack => {
+            addStackShips(state, target, stack.designId, stack.count || 0);
+        });
+        const mergedCargo = {
+            i: (source.cargo?.i || 0) + (target.cargo?.i || 0),
+            b: (source.cargo?.b || 0) + (target.cargo?.b || 0),
+            g: (source.cargo?.g || 0) + (target.cargo?.g || 0),
+            pop: (source.cargo?.pop || 0) + (target.cargo?.pop || 0)
+        };
+        target.cargo = mergedCargo;
+        target.fuel = (source.fuel || 0) + (target.fuel || 0);
+        normalizeFleetStacks(target);
+        updateFleetTotals(state, target);
+        removed.add(source.id);
+    });
+    if (removed.size) {
+        state.fleets = state.fleets.filter(fleet => !removed.has(fleet.id));
+    }
+};
+
+const resolveFleetSplitOrders = (state) => {
+    const orders = state.fleetSplitOrders || [];
+    if (!orders.length) {
+        return;
+    }
+    orders.forEach(order => {
+        const source = state.fleets.find(item => item.id === order.fleetId);
+        if (!source) {
+            return;
+        }
+        const transferStacks = Array.isArray(order.stacks)
+            ? order.stacks.filter(stack => stack.designId && stack.count > 0)
+            : [];
+        if (!transferStacks.length) {
+            return;
+        }
+        const newStacks = [];
+        transferStacks.forEach(stack => {
+            const removed = removeStackShips(source, stack.designId, stack.count);
+            if (removed <= 0) {
+                return;
+            }
+            const design = getDesignById(state, source.owner, stack.designId);
+            newStacks.push(buildStackFromDesign(design, { designId: stack.designId, count: removed }));
+        });
+        normalizeFleetStacks(source);
+        updateFleetTotals(state, source);
+        if (!newStacks.length) {
+            return;
+        }
+        const design = getDesignById(state, source.owner, newStacks[0].designId) || source.design;
+        const newFleet = new Fleet({
+            id: state.nextFleetId++,
+            owner: source.owner,
+            x: source.x,
+            y: source.y,
+            name: order.name || `${source.name} Split`,
+            design,
+            waypoints: [],
+            cargo: { i: 0, b: 0, g: 0, pop: 0 },
+            shipStacks: newStacks
+        });
+        if (order.cargo) {
+            const cargo = {
+                i: Math.min(order.cargo.i || 0, source.cargo?.i || 0),
+                b: Math.min(order.cargo.b || 0, source.cargo?.b || 0),
+                g: Math.min(order.cargo.g || 0, source.cargo?.g || 0),
+                pop: Math.min(order.cargo.pop || 0, source.cargo?.pop || 0)
+            };
+            newFleet.cargo = { ...cargo };
+            source.cargo.i = (source.cargo?.i || 0) - cargo.i;
+            source.cargo.b = (source.cargo?.b || 0) - cargo.b;
+            source.cargo.g = (source.cargo?.g || 0) - cargo.g;
+            source.cargo.pop = (source.cargo?.pop || 0) - cargo.pop;
+        }
+        if (Number.isFinite(order.fuel)) {
+            const fuel = Math.min(order.fuel, source.fuel || 0);
+            newFleet.fuel = fuel;
+            source.fuel = Math.max(0, (source.fuel || 0) - fuel);
+        }
+        updateFleetTotals(state, newFleet);
+        updateFleetTotals(state, source);
+        state.fleets.push(newFleet);
+    });
+    state.fleets = state.fleets.filter(fleet => (fleet.shipStacks || []).length > 0);
+};
+
+const resolveFleetTransferOrders = (state) => {
+    const orders = state.fleetTransferOrders || [];
+    if (!orders.length) {
+        return;
+    }
+    orders.forEach(order => {
+        const source = state.fleets.find(item => item.id === order.sourceFleetId);
+        const target = state.fleets.find(item => item.id === order.targetFleetId);
+        if (!source || !target) {
+            return;
+        }
+        if (dist(source, target) > 12) {
+            state.orderErrors.push(`Fleets must share a location to transfer (${source.name}, ${target.name}).`);
+            return;
+        }
+        if (Array.isArray(order.stacks)) {
+            order.stacks.forEach(stack => {
+                const removed = removeStackShips(source, stack.designId, stack.count || 0);
+                if (removed > 0) {
+                    addStackShips(state, target, stack.designId, removed);
+                }
+            });
+        }
+        if (order.cargo) {
+            const transfer = {
+                i: Math.min(order.cargo.i || 0, source.cargo?.i || 0),
+                b: Math.min(order.cargo.b || 0, source.cargo?.b || 0),
+                g: Math.min(order.cargo.g || 0, source.cargo?.g || 0),
+                pop: Math.min(order.cargo.pop || 0, source.cargo?.pop || 0)
+            };
+            const targetCargo = {
+                i: (target.cargo?.i || 0) + transfer.i,
+                b: (target.cargo?.b || 0) + transfer.b,
+                g: (target.cargo?.g || 0) + transfer.g,
+                pop: (target.cargo?.pop || 0) + transfer.pop
+            };
+            target.cargo = targetCargo;
+            source.cargo.i = (source.cargo?.i || 0) - transfer.i;
+            source.cargo.b = (source.cargo?.b || 0) - transfer.b;
+            source.cargo.g = (source.cargo?.g || 0) - transfer.g;
+            source.cargo.pop = (source.cargo?.pop || 0) - transfer.pop;
+        }
+        if (Number.isFinite(order.fuel)) {
+            const fuel = Math.min(order.fuel, source.fuel || 0);
+            target.fuel = (target.fuel || 0) + fuel;
+            source.fuel = Math.max(0, (source.fuel || 0) - fuel);
+        }
+        normalizeFleetStacks(source);
+        normalizeFleetStacks(target);
+        updateFleetTotals(state, source);
+        updateFleetTotals(state, target);
+    });
+    state.fleets = state.fleets.filter(fleet => (fleet.shipStacks || []).length > 0);
+};
+
+const resolveFleetScrapOrders = (state) => {
+    const orders = state.fleetScrapOrders || [];
+    if (!orders.length) {
+        return;
+    }
+    const remove = new Set();
+    orders.forEach(order => {
+        const fleet = state.fleets.find(item => item.id === order.fleetId);
+        if (!fleet) {
+            return;
+        }
+        const star = state.stars.find(candidate => dist(candidate, fleet) < 12);
+        if (!star || star.owner !== fleet.owner) {
+            state.orderErrors.push(`Fleet ${fleet.name} must be at a friendly star to scrap.`);
+            return;
+        }
+        remove.add(fleet.id);
+        if (state.turnEvents) {
+            state.turnEvents.push({
+                type: "FLEET_SCRAPPED",
+                fleetId: fleet.id,
+                starId: star.id
+            });
+        }
+    });
+    if (remove.size) {
+        state.fleets = state.fleets.filter(fleet => !remove.has(fleet.id));
+    }
 };
 
 const resolveMovement = (state) => {
@@ -318,16 +620,22 @@ const resolveMovement = (state) => {
             if (!fleet.dest) {
                 return;
             }
-            const speed = getFleetSpeed(state, fleet);
+            const { totals, totalMass } = updateFleetTotals(state, fleet);
             const warpSpeed = getWarpSpeed(state, fleet);
-            if (fleet.fuel <= 0) {
+            const speed = getFleetSpeed(state, fleet, warpSpeed);
+            if (fleet.fuel <= 0 || totals.fuelPool <= 0) {
                 fleet.dest = null;
                 state.orderErrors.push(`${fleet.name} lacked fuel and could not move.`);
                 return;
             }
             const move = stepToward(fleet, fleet.dest.x, fleet.dest.y, speed);
             const distance = Math.hypot(move.x - fleet.x, move.y - fleet.y);
-            const fuelUse = applyRamscoop(fleet, distance, calculateFuelUsage(fleet, warpSpeed, distance));
+            const fuelUse = applyRamscoop(
+                fleet,
+                distance,
+                calculateFuelUsage(totalMass, warpSpeed, distance),
+                totals.hasRamscoop
+            );
             nextPositions.set(fleet.id, { ...move, fuelUse, start: { x: fleet.x, y: fleet.y } });
         });
 
@@ -690,6 +998,10 @@ export const TurnEngine = {
         const lockedOrders = OrderResolver.lockOrders(state.orders);
         OrderResolver.resolveOrders(state, lockedOrders);
 
+        resolveFleetMergeOrders(state);
+        resolveFleetSplitOrders(state);
+        resolveFleetTransferOrders(state);
+        resolveFleetScrapOrders(state);
         resolveMovement(state);
         resolveWaypointTasks(state);
         resolveWormholes(state);
