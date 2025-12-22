@@ -241,6 +241,9 @@ const resolveLaunchPacket = (state, order) => {
         logOrderError(state, `Insufficient minerals for packet launch.`);
         return;
     }
+    const driverRules = state.rules?.massDriver || {};
+    const driverSpeed = driverRules.speed ?? null;
+    const driverRating = driverRules.driverRating ?? driverSpeed ?? null;
     state.packets.push(new ResourcePacket({
         id: state.nextPacketId++,
         x: origin.x,
@@ -249,7 +252,9 @@ const resolveLaunchPacket = (state, order) => {
         destY: target.y,
         destId: target.id,
         payload: amount,
-        owner: order.issuerId
+        owner: order.issuerId,
+        speed: driverSpeed,
+        driverRating
     }));
 };
 

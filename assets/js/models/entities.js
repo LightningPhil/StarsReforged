@@ -189,7 +189,22 @@ class Fleet {
 }
 
 class ResourcePacket {
-    constructor({ id, x, y, destX, destY, payload, destId, owner, type = "resource", speed = null, decayRate = null, catchRadius = null, damageMultiplier = null }) {
+    constructor({
+        id,
+        x,
+        y,
+        destX,
+        destY,
+        payload,
+        destId,
+        owner,
+        type = "resource",
+        speed = null,
+        driverRating = null,
+        decayRate = null,
+        catchRadius = null,
+        damageMultiplier = null
+    }) {
         this.id = id;
         this.x = x;
         this.y = y;
@@ -200,6 +215,7 @@ class ResourcePacket {
         this.owner = owner;
         this.type = type;
         this.speed = speed;
+        this.driverRating = driverRating;
         this.decayRate = decayRate;
         this.catchRadius = catchRadius;
         this.damageMultiplier = damageMultiplier;

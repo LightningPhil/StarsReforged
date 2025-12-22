@@ -1059,6 +1059,8 @@ const resolveVisibility = (state) => {
     state.minefieldIntel = state.minefieldIntel || {};
     state.wormholeIntel = state.wormholeIntel || {};
     state.wormholes = state.wormholes || [];
+    const raceModifiers = resolveRaceModifiers(state.race).modifiers;
+    const packetCloak = raceModifiers.packetPhysics ? 50 : 0;
 
     state.players.forEach(player => {
         const playerId = player.id;
@@ -1132,7 +1134,7 @@ const resolveVisibility = (state) => {
         state.packets.forEach(packet => {
             const intelState = packet.owner === playerId
                 ? "penetrated"
-                : getIntelState(scanners, packet);
+                : getIntelState(scanners, packet, packetCloak);
             packetVisibility[packet.id] = intelState;
         });
 

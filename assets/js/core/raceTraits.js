@@ -85,6 +85,7 @@ const TRAIT_CATALOG = {
         cost: 4,
         exclusiveGroup: "primary",
         modifiers: {
+            packetPhysics: true,
             shipRangeMultiplier: 1.05,
             startingTechLevels: { PROP: 1 }
         }
@@ -280,7 +281,8 @@ const buildBaseModifiers = () => ({
     stargateRangeMultiplier: 1,
     stargateMassMultiplier: 1,
     stargateMisjumpMultiplier: 1,
-    alternateReality: false
+    alternateReality: false,
+    packetPhysics: false
 });
 
 const mergeModifierLists = (target, additions) => {
@@ -411,6 +413,9 @@ const applyTraitModifiers = (modifiers, trait) => {
     }
     if (typeof effects.alternateReality === "boolean") {
         modifiers.alternateReality = modifiers.alternateReality || effects.alternateReality;
+    }
+    if (typeof effects.packetPhysics === "boolean") {
+        modifiers.packetPhysics = modifiers.packetPhysics || effects.packetPhysics;
     }
 };
 
