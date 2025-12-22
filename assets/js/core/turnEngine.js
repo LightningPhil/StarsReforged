@@ -21,6 +21,7 @@ import { resolvePlanetEconomy } from "./planetEconomyResolver.js";
 import { resolveRaceModifiers } from "./raceTraits.js";
 import { resolveMassDriverPackets } from "./massDriverResolver.js";
 import { resolveWormholes } from "./wormholeResolver.js";
+import { serializePlayerState } from "./saveState.js";
 
 const cloneStar = (star) => {
     const clone = new Star({ id: star.id, x: star.x, y: star.y, name: star.name, owner: star.owner });
@@ -434,7 +435,7 @@ const calculateFuelUsage = (totalMass, warpSpeed, distance, fuelUsageProfile = n
         const fuelPerLy = Math.max(1, Math.ceil((warpSpeed * massFactor) / 2));
         return Math.ceil(distance * fuelPerLy);
     }
-    return Math.ceil((totalMass * efficiency * distance / 200) + 0.9);
+    return Math.floor((totalMass * efficiency * distance / 200) + 0.9);
 };
 
 const applyRamscoop = (warpSpeed, fuelUse, freeSpeed = 0) => {
@@ -1361,7 +1362,13 @@ const resolveColonization = (state) => {
 export const TurnEngine = {
     processTurn(gameState) {
         if (gameState.state === "ENDED") {
-            return cloneGameState(gameState);
+            const finalState = cloneGameState(gameState);
+            resolveVisibility(finalState);
+            return {
+                nextState: finalState,
+                playerStates: finalState.players.map(player => serializePlayerState(finalState, player.id)),
+                battleLogs: finalState.combatReports ? finalState.combatReports.slice() : []
+            };
         }
         const archivedState = {
             turn: gameState.turnCount,
@@ -1399,6 +1406,10 @@ export const TurnEngine = {
 
         state.orders = [];
         state.turnEvents.push({ type: "TURN_COMPLETE", turn: state.turnCount });
-        return state;
+        return {
+            nextState: state,
+            playerStates: state.players.map(player => serializePlayerState(state, player.id)),
+            battleLogs: state.combatReports ? state.combatReports.slice() : []
+        };
     }
 };
