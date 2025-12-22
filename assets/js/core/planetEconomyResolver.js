@@ -30,6 +30,39 @@ const normalizeStarEconomy = (star) => {
     }
 };
 
+const getPlanetSizeValue = (star) => {
+    if (Number.isFinite(star.size)) {
+        return star.size;
+    }
+    return 100;
+};
+
+const getMaxPopulationMultiplier = (race, raceModifiers) => {
+    const baseMultiplier = raceModifiers?.maxPopulationMultiplier || 1;
+    const primaryTrait = race?.primaryTrait;
+    if (primaryTrait === "HE") {
+        return (baseMultiplier / 1.15) * 0.5;
+    }
+    if (primaryTrait === "JOAT") {
+        return baseMultiplier * 1.2;
+    }
+    return baseMultiplier;
+};
+
+const getMaxPopulation = (star, race, raceModifiers, alternateReality) => {
+    if (alternateReality) {
+        if (!star.def?.base) {
+            return 0;
+        }
+        const baseHp = Number.isFinite(star.def.base?.hp) ? star.def.base.hp : 1000;
+        return Math.max(0, Math.floor(baseHp * 100));
+    }
+    const planetSize = getPlanetSizeValue(star);
+    const sizeScale = clamp(planetSize / 100, 0.1, 2);
+    const traitMultiplier = getMaxPopulationMultiplier(race, raceModifiers);
+    return Math.max(2500, Math.floor(BASE_MAX_POP * sizeScale * traitMultiplier));
+};
+
 const isAlternateReality = (race, raceModifiers) => {
     if (raceModifiers?.alternateReality) {
         return true;
@@ -210,31 +243,43 @@ export const resolvePlanetEconomy = (state) => {
             normalizeStarEconomy(star);
             const techModifiers = getTechnologyModifiers(getTechnologyStateForEmpire(state, star.owner));
             applyTerraforming(star, techModifiers, raceModifiers);
-            const habitabilityScore = getHabitabilityScore({ star, race: state.race, techModifiers });
-            star.habitability = Math.round(habitabilityScore * 100);
-            star.deathRate = habitabilityScore >= 0.5 ? 0 : Math.round((0.5 - habitabilityScore) * 200);
-            const maxPopulation = Math.max(
-                2500,
-                Math.floor(BASE_MAX_POP * (0.2 + habitabilityScore * 0.8) * (raceModifiers.maxPopulationMultiplier || 1))
-            );
-            if (habitabilityScore < 0.5) {
-                const loss = Math.ceil(star.pop * (star.deathRate / 100));
-                star.pop = Math.max(0, star.pop - loss);
-            } else {
+            const habitabilityValue = getHabitabilityScore({ star, race: state.race, techModifiers });
+            star.habitability = Math.round(habitabilityValue);
+            star.deathRate = habitabilityValue < 0 ? Math.round(Math.abs(habitabilityValue / 10) * 100) : 0;
+            const maxPopulation = getMaxPopulation(star, state.race, raceModifiers, alternateReality);
+            if (habitabilityValue < 0) {
+                const losses = Math.floor(star.pop * (habitabilityValue / 10));
+                star.pop = Math.max(0, Math.floor(star.pop + losses));
+            } else if (star.pop < maxPopulation) {
                 const growthMultiplier = (techModifiers?.populationGrowth || 1) * (raceModifiers.populationGrowth || 1);
-                const grown = Math.floor(star.pop * BASE_POP_GROWTH * growthMultiplier);
+                const habitabilityMultiplier = Math.max(0, habitabilityValue / 100);
+                const grown = Math.floor(star.pop * BASE_POP_GROWTH * growthMultiplier * habitabilityMultiplier);
                 star.pop = Math.min(maxPopulation, grown);
             }
 
+            const crowdingRatio = maxPopulation > 0 ? star.pop / maxPopulation : (star.pop > 0 ? Infinity : 0);
+            if (crowdingRatio >= 4) {
+                const overcrowdingLoss = Math.floor(star.pop * 0.12);
+                star.pop = Math.max(0, star.pop - overcrowdingLoss);
+                star.deathRate = Math.max(star.deathRate, 12);
+            }
+
             const popIncome = Math.floor(star.pop / POP_OUTPUT_DIVISOR);
-            const productionPoints = Math.max(0, (alternateReality ? 0 : popIncome) + star.factories);
+            let productionMultiplier = 1;
+            if (crowdingRatio >= 1 && crowdingRatio <= 3) {
+                productionMultiplier = 0.5;
+            } else if (crowdingRatio > 3) {
+                productionMultiplier = 0;
+            }
+            const adjustedPopIncome = Math.floor(popIncome * productionMultiplier);
+            const productionPoints = Math.max(0, (alternateReality ? 0 : adjustedPopIncome) + star.factories);
 
             const economy = state.economy?.[star.owner];
             if (!economy) {
                 return;
             }
 
-            const resources = (alternateReality ? star.factories : popIncome + star.factories);
+            const resources = (alternateReality ? star.factories : adjustedPopIncome + star.factories);
             if (star.owner === 1) {
                 taxTotal += popIncome;
                 industrialOutput += productionPoints;
