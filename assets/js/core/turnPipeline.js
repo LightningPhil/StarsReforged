@@ -12,6 +12,16 @@ const normalizeOrderStates = (orderStates) => normalizeArray(orderStates).flatMa
     return deserialized?.orders || [];
 });
 
+const normalizeOrdersInput = (orders) => {
+    if (Array.isArray(orders)) {
+        return orders;
+    }
+    if (orders && typeof orders === "object") {
+        return Object.values(orders).flatMap(value => normalizeArray(value));
+    }
+    return [];
+};
+
 export const runTurnPipeline = ({ universeState, playerStates, orderStates }) => {
     const gameState = assembleGameState({
         universeState,
@@ -55,5 +65,23 @@ export const runTurnPipeline = ({ universeState, playerStates, orderStates }) =>
         universeState: nextUniverseState,
         playerStates: nextPlayerStates,
         historyState
+    };
+};
+
+export const runHostTurn = ({ universeState, orders }) => {
+    const gameState = assembleGameState({
+        universeState,
+        playerState: null,
+        rules: universeState?.rules,
+        aiConfig: universeState?.aiConfig
+    });
+    if (!gameState) {
+        return null;
+    }
+    gameState.orders = normalizeOrdersInput(orders);
+    const nextState = TurnEngine.processTurn(gameState);
+    return {
+        newUniverseState: serializeUniverseState(nextState),
+        playerViews: nextState.players.map(player => serializePlayerState(nextState, player.id))
     };
 };

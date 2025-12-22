@@ -1,5 +1,5 @@
 import { DB } from "../data/db.js";
-import { Fleet, Message, Race, ResourcePacket, Star } from "../models/entities.js";
+import { Fleet, Message, Race, Star } from "../models/entities.js";
 import { PCG32 } from "./rng.js";
 import { dist, intSqrt } from "./utils.js";
 import { TurnEngine } from "./turnEngine.js";
@@ -20,17 +20,12 @@ import {
 } from "./technologyResolver.js";
 import { enforceAllocationRules, resolveRaceModifiers } from "./raceTraits.js";
 import { buildShipDesign } from "./shipDesign.js";
-import { ORDER_TYPES } from "../models/orders.js";
+import { Order, ORDER_TYPES } from "../models/orders.js";
 
 let ui = null;
-let renderer = null;
 
 export const bindUI = (uiRef) => {
     ui = uiRef;
-};
-
-export const bindRenderer = (rendererRef) => {
-    renderer = rendererRef;
 };
 
 const getDesignForStack = (game, fleet, stack) => {
@@ -171,10 +166,8 @@ export const Game = {
     },
     selection: null,
     activeScanners: [],
-    audio: {
-        ctx: null
-    },
     currentTurnLog: null,
+    orderQueues: {},
 
     init: async function() {
         const configs = await loadConfig();
@@ -203,9 +196,6 @@ export const Game = {
             this.logMsg("Welcome, Emperor. The sector is uncharted.", "System");
         }
 
-        if (renderer?.init) {
-            renderer.init();
-        }
         if (ui?.init) {
             ui.init();
         }
@@ -243,6 +233,7 @@ export const Game = {
         this.race = loadedState.race ?? this.race;
         this.diplomacy = loadedState.diplomacy ?? this.diplomacy;
         this.orders = loadedState.orders ?? this.orders;
+        this.rebuildOrderQueues(this.orders);
         this.combatReports = loadedState.combatReports ?? this.combatReports;
         this.turnHistory = loadedState.turnHistory ?? this.turnHistory;
         this.turnEvents = loadedState.turnEvents ?? this.turnEvents;
@@ -489,6 +480,7 @@ export const Game = {
         this.startTurnLog();
         this.turnEvents = [];
         this.processAITurns();
+        this.orders = this.collectOrders();
         const stargateOrders = this.orders.filter(order => order.type === ORDER_TYPES.STARGATE_JUMP && order.issuerId === 1);
         const sweepOrders = this.orders.filter(order => order.type === ORDER_TYPES.SWEEP_MINES && order.issuerId === 1);
         const nextState = TurnEngine.processTurn(this);
@@ -546,9 +538,6 @@ export const Game = {
         }
         this.resolveEndOfTurn();
         this.updateVisibility();
-        if (renderer) {
-            renderer.cam.dirty = true;
-        }
         if (ui) {
             ui.updateHeader();
             ui.updateSide();
@@ -557,7 +546,7 @@ export const Game = {
             ui.updateResearch();
             ui.updateComms();
         }
-        this.playSound(140, 0.08);
+        ui?.playSound?.(140, 0.08);
         this.finalizeTurnLog();
     },
 
@@ -586,6 +575,7 @@ export const Game = {
         this.nextFleetId = nextState.nextFleetId;
         this.nextPacketId = nextState.nextPacketId;
         this.orders = nextState.orders;
+        this.rebuildOrderQueues(this.orders);
         this.combatReports = nextState.combatReports;
         this.turnHistory = nextState.turnHistory;
         this.turnEvents = nextState.turnEvents;
@@ -762,7 +752,7 @@ export const Game = {
             this.turnEvents.push({ type: "AI_TURN_STARTED", playerId: player.id, turn: this.turnCount + 1 });
             const result = AIController.runTurn(this, player.id, difficulty, { roll: (max) => this.roll(max), maxTimeMs });
             result.orders.forEach(order => {
-                this.orders.push(order);
+                this.queueOrder(order);
                 this.turnEvents.push({ type: "AI_ACTION_TAKEN", playerId: player.id, orderType: order.type, turn: this.turnCount + 1 });
             });
             this.turnEvents.push({ type: "AI_TURN_ENDED", playerId: player.id, turn: this.turnCount + 1, intent: result.intent });
@@ -847,80 +837,25 @@ export const Game = {
     },
 
     queueBuild: function(star, designId, ownerId = 1) {
-        const designs = this.shipDesigns?.[ownerId] || [];
-        const blueprint = designs.find(design => design.designId === designId) || designs[designId];
-        if (!blueprint) {
+        const starId = star?.id ?? star;
+        if (!Number.isFinite(starId)) {
             return;
         }
-        const techState = getTechnologyStateForEmpire(this, ownerId);
-        const modifiers = getTechnologyModifiers(techState);
-        const adjustedCost = Math.ceil(blueprint.cost * modifiers.shipCost);
-        const economy = this.economy?.[ownerId];
-        if (!economy || economy.credits < adjustedCost) {
-            if (ownerId === 1) {
-                this.logMsg(`Insufficient credits to build ${blueprint.name}.`, "Industry");
-            }
-            return;
-        }
-        economy.credits -= adjustedCost;
+        this.queueOrder(new Order(ORDER_TYPES.BUILD_SHIPS, ownerId, { starId, designId }));
         if (ownerId === 1) {
-            this.credits = economy.credits;
-        }
-        star.queue = {
-            type: 'ship',
-            bp: blueprint,
-            cost: adjustedCost,
-            done: 0,
-            owner: ownerId,
-            mineralCost: {
-                i: Math.ceil(adjustedCost * 0.4),
-                b: Math.ceil(adjustedCost * 0.3),
-                g: Math.ceil(adjustedCost * 0.3)
-            }
-        };
-        if (ownerId === 1) {
-            this.logMsg(`Construction of ${blueprint.name} started at ${star.name}.`, "Industry");
+            this.logMsg(`BUILD ORDER QUEUED: Ship design ${designId} at ${star?.name || `Star#${starId}`}.`, "Industry");
         }
     },
 
     queueStructure: function(star, kind, count = 1, ownerId = 1) {
-        const structure = DB.structures[kind];
-        if (!structure) {
+        const starId = star?.id ?? star;
+        if (!Number.isFinite(starId)) {
             return;
         }
-        if (kind === 'base' && star.def.base) {
-            if (ownerId === 1) {
-                this.logMsg(`${star.name} already has a starbase.`, "Industry");
-            }
-            return;
-        }
-        const cost = structure.cost * count;
-        const economy = this.economy?.[ownerId];
-        if (!economy || economy.credits < cost) {
-            if (ownerId === 1) {
-                this.logMsg(`Insufficient credits to build ${structure.name}.`, "Industry");
-            }
-            return;
-        }
-        economy.credits -= cost;
+        this.queueOrder(new Order(ORDER_TYPES.BUILD_STRUCTURE, ownerId, { starId, kind, count }));
         if (ownerId === 1) {
-            this.credits = economy.credits;
-        }
-        star.queue = {
-            type: 'structure',
-            kind,
-            count,
-            cost,
-            done: 0,
-            owner: ownerId,
-            mineralCost: {
-                i: Math.ceil(cost * 0.4),
-                b: Math.ceil(cost * 0.3),
-                g: Math.ceil(cost * 0.3)
-            }
-        };
-        if (ownerId === 1) {
-            this.logMsg(`Construction of ${structure.name} queued at ${star.name}.`, "Industry");
+            const structureName = DB.structures?.[kind]?.name || kind;
+            this.logMsg(`BUILD ORDER QUEUED: ${structureName} x${count} at ${star?.name || `Star#${starId}`}.`, "Industry");
         }
     },
 
@@ -1015,7 +950,7 @@ export const Game = {
             details: rounds.join('\n') + `\nFinal: ${result.toUpperCase()}`
         });
         this.logMsg(battleLog, "Combat", "high");
-        this.playSound(240, 0.2);
+        ui?.playSound?.(240, 0.2);
 
         if (result === 'attacker') {
             defenderStar.owner = attacker.owner;
@@ -1026,89 +961,41 @@ export const Game = {
         }
     },
 
-    scanSector: function(star) {
-        const modifiers = getTechnologyModifiers(getTechnologyStateForEmpire(this, 1));
-        const range = Math.floor(200 * modifiers.shipRange);
-        this.sectorScans.push({ x: star.x, y: star.y, r: range, owner: 1, expires: this.turnCount + 1 });
-        this.updateVisibility();
-        renderer.cam.dirty = true;
+    scanSector: function(star, ownerId = 1) {
+        const starId = star?.id ?? star;
+        if (!Number.isFinite(starId)) {
+            return;
+        }
+        this.queueOrder(new Order(ORDER_TYPES.SCAN_SECTOR, ownerId, { starId }));
+        if (ownerId === 1) {
+            this.logMsg(`SCAN ORDER QUEUED: Sector scan from ${star?.name || `Star#${starId}`}.`, "Command");
+        }
     },
 
     placeMinefield: function(fleet, mineUnits) {
-        if (!fleet.design.flags.includes("minelayer")) {
-            this.logMsg("This fleet lacks a mine-laying module.", "Command");
+        if (!fleet) {
             return;
         }
-        const units = Math.max(0, Math.min(fleet.mineUnits, Math.floor(mineUnits || fleet.mineUnits)));
-        if (units <= 0) {
-            this.logMsg("No mine units available to deploy.", "Command");
-            return;
-        }
-        this.orders.push({
-            type: ORDER_TYPES.LAY_MINES,
-            issuerId: fleet.owner,
-            payload: {
-                fleetId: fleet.id,
-                mineUnitsToDeploy: units
-            }
-        });
-        this.logMsg(`${fleet.name} queued minefield deployment.`, "Command");
-    },
-
-    withdrawMinerals: function(amount, ownerId = 1) {
-        const economy = this.economy?.[ownerId];
-        if (!economy) {
-            return false;
-        }
-        const stock = economy.mineralStock;
-        let remaining = amount;
-        const take = (key) => {
-            const used = Math.min(stock[key], remaining);
-            stock[key] -= used;
-            remaining -= used;
-        };
-        take('i');
-        take('b');
-        take('g');
-        economy.minerals = stock.i + stock.b + stock.g;
-        if (ownerId === 1) {
-            this.mineralStock = { ...stock };
-            this.minerals = economy.minerals;
-        }
-        return remaining <= 0;
-    },
-
-    launchPacket: function(originId) {
-        const origin = this.stars[originId];
-        const targetId = parseInt(document.getElementById('driver-target').value, 10);
-        const amount = parseInt(document.getElementById('driver-amount').value, 10);
-        if (!origin || origin.owner !== 1) {
-            return;
-        }
-        if (Number.isNaN(targetId) || !this.stars[targetId]) {
-            this.logMsg("Select a valid target for the packet.", "Industry");
-            return;
-        }
-        if (!amount || amount <= 0) {
-            this.logMsg("Specify a transfer amount.", "Industry");
-            return;
-        }
-        if (!this.withdrawMinerals(amount, 1)) {
-            this.logMsg("Insufficient minerals for packet launch.", "Industry");
-            return;
-        }
-        const target = this.stars[targetId];
-        this.packets.push(new ResourcePacket({
-            id: this.nextPacketId++,
-            x: origin.x,
-            y: origin.y,
-            destX: target.x,
-            destY: target.y,
-            destId: targetId,
-            payload: amount,
-            owner: 1
+        const units = Math.max(0, Math.floor(mineUnits || fleet.mineUnits || 0));
+        this.queueOrder(new Order(ORDER_TYPES.LAY_MINES, fleet.owner, {
+            fleetId: fleet.id,
+            mineUnitsToDeploy: units
         }));
-        this.logMsg(`Mass driver packet launched to ${target.name}.`, "Industry");
+        if (fleet.owner === 1) {
+            this.logMsg(`${fleet.name} queued minefield deployment.`, "Command");
+        }
+    },
+
+    launchPacket: function(originId, targetId, amount, ownerId = 1) {
+        const origin = this.stars.find(star => star.id === originId);
+        if (!origin || origin.owner !== ownerId) {
+            return;
+        }
+        this.queueOrder(new Order(ORDER_TYPES.LAUNCH_PACKET, ownerId, { originId, targetId, amount }));
+        if (ownerId === 1) {
+            const target = this.stars.find(star => star.id === targetId);
+            this.logMsg(`PACKET ORDER QUEUED: ${origin.name} ➜ ${target?.name || `Star#${targetId}`}.`, "Industry");
+        }
     },
 
     updateVisibility: function() {
@@ -1218,24 +1105,36 @@ export const Game = {
         });
     },
 
-    playSound: function(freq, duration) {
-        try {
-            if (!this.audio.ctx) {
-                this.audio.ctx = new (window.AudioContext || window.webkitAudioContext)();
-            }
-            const ctx = this.audio.ctx;
-            const osc = ctx.createOscillator();
-            const gain = ctx.createGain();
-            osc.frequency.value = freq;
-            osc.type = 'sine';
-            gain.gain.value = 0.06;
-            osc.connect(gain);
-            gain.connect(ctx.destination);
-            osc.start();
-            osc.stop(ctx.currentTime + duration);
-        } catch (e) {
-            // Audio not supported or blocked.
+    queueOrder: function(order) {
+        if (!order || !Number.isFinite(order.issuerId)) {
+            return;
         }
+        if (!this.orderQueues[order.issuerId]) {
+            this.orderQueues[order.issuerId] = [];
+        }
+        this.orderQueues[order.issuerId].push(order);
+        this.orders = this.collectOrders();
+    },
+
+    collectOrders: function() {
+        return Object.values(this.orderQueues).flat();
+    },
+
+    getOrderQueue: function(playerId = 1) {
+        return this.orderQueues[playerId] || [];
+    },
+
+    rebuildOrderQueues: function(orders = []) {
+        this.orderQueues = {};
+        orders.forEach(order => {
+            if (!order || !Number.isFinite(order.issuerId)) {
+                return;
+            }
+            if (!this.orderQueues[order.issuerId]) {
+                this.orderQueues[order.issuerId] = [];
+            }
+            this.orderQueues[order.issuerId].push(order);
+        });
     },
 
     getTechnologyFields: function() {

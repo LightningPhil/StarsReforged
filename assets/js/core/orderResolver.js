@@ -1,4 +1,6 @@
 import { ORDER_TYPES, WAYPOINT_TASKS } from "../models/orders.js";
+import { DB } from "../data/db.js";
+import { ResourcePacket } from "../models/entities.js";
 import {
     adjustAllocationForField,
     getTechnologyModifiers,
@@ -127,6 +129,121 @@ const resolveBuildShips = (state, order) => {
             g: Math.ceil(adjustedCost * DEFAULT_MINERAL_RATIO.g)
         }
     };
+};
+
+const resolveBuildStructure = (state, order) => {
+    const star = getStarById(state, order.payload?.starId);
+    const kind = order.payload?.kind;
+    const count = Math.max(1, Math.floor(order.payload?.count || 1));
+    if (!star || star.owner !== order.issuerId) {
+        logOrderError(state, `Invalid BUILD_STRUCTURE order from ${order.issuerId}.`);
+        return;
+    }
+    const structure = DB.structures?.[kind];
+    if (!structure) {
+        logOrderError(state, `Unknown structure for BUILD_STRUCTURE.`);
+        return;
+    }
+    if (star.queue) {
+        logOrderError(state, `Star ${star.id} already has a build queue.`);
+        return;
+    }
+    if (kind === "base" && star.def.base) {
+        logOrderError(state, `Star ${star.id} already has a starbase.`);
+        return;
+    }
+    const economy = state.economy?.[order.issuerId];
+    const cost = structure.cost * count;
+    if (!economy || economy.credits < cost) {
+        logOrderError(state, `Insufficient credits to build ${structure.name}.`);
+        return;
+    }
+    economy.credits -= cost;
+    star.queue = {
+        type: "structure",
+        kind,
+        count,
+        cost,
+        done: 0,
+        owner: order.issuerId,
+        mineralCost: {
+            i: Math.ceil(cost * DEFAULT_MINERAL_RATIO.i),
+            b: Math.ceil(cost * DEFAULT_MINERAL_RATIO.b),
+            g: Math.ceil(cost * DEFAULT_MINERAL_RATIO.g)
+        }
+    };
+};
+
+const resolveScanSector = (state, order) => {
+    const star = getStarById(state, order.payload?.starId);
+    if (!star || star.owner !== order.issuerId) {
+        logOrderError(state, `Invalid SCAN_SECTOR order from ${order.issuerId}.`);
+        return;
+    }
+    const modifiers = getTechnologyModifiers(getTechnologyStateForEmpire(state, order.issuerId));
+    const range = Math.floor(200 * modifiers.shipRange);
+    if (!state.sectorScans) {
+        state.sectorScans = [];
+    }
+    state.sectorScans.push({
+        x: star.x,
+        y: star.y,
+        r: range,
+        owner: order.issuerId,
+        expires: state.turnCount
+    });
+};
+
+const withdrawMinerals = (state, ownerId, amount) => {
+    const economy = state.economy?.[ownerId];
+    if (!economy) {
+        return false;
+    }
+    const stock = economy.mineralStock;
+    let remaining = amount;
+    const take = (key) => {
+        const used = Math.min(stock[key], remaining);
+        stock[key] -= used;
+        remaining -= used;
+    };
+    take("i");
+    take("b");
+    take("g");
+    economy.minerals = stock.i + stock.b + stock.g;
+    return remaining <= 0;
+};
+
+const resolveLaunchPacket = (state, order) => {
+    const origin = getStarById(state, order.payload?.originId);
+    const targetId = order.payload?.targetId;
+    const amount = Math.max(0, Math.floor(order.payload?.amount || 0));
+    if (!origin || origin.owner !== order.issuerId) {
+        logOrderError(state, `Invalid LAUNCH_PACKET order from ${order.issuerId}.`);
+        return;
+    }
+    const target = getStarById(state, targetId);
+    if (!target) {
+        logOrderError(state, `Invalid LAUNCH_PACKET target for ${order.issuerId}.`);
+        return;
+    }
+    if (!amount) {
+        logOrderError(state, `Invalid LAUNCH_PACKET payload for ${order.issuerId}.`);
+        return;
+    }
+    if (!withdrawMinerals(state, order.issuerId, amount)) {
+        logOrderError(state, `Insufficient minerals for packet launch.`);
+        return;
+    }
+    state.packets.push(new ResourcePacket({
+        id: state.nextPacketId++,
+        x: origin.x,
+        y: origin.y,
+        destX: target.x,
+        destY: target.y,
+        destId: target.id,
+        payload: amount,
+        owner: order.issuerId
+    }));
 };
 
 const resolveLayMines = (state, order) => {
@@ -265,12 +382,21 @@ export const OrderResolver = {
                 case ORDER_TYPES.BUILD_SHIPS:
                     resolveBuildShips(state, order);
                     break;
+                case ORDER_TYPES.BUILD_STRUCTURE:
+                    resolveBuildStructure(state, order);
+                    break;
                 case ORDER_TYPES.RESEARCH:
                     resolveResearch(state, order);
+                    break;
+                case ORDER_TYPES.SCAN_SECTOR:
+                    resolveScanSector(state, order);
                     break;
                 case ORDER_TYPES.DEPLOY_MINEFIELD:
                 case ORDER_TYPES.LAY_MINES:
                     resolveLayMines(state, order);
+                    break;
+                case ORDER_TYPES.LAUNCH_PACKET:
+                    resolveLaunchPacket(state, order);
                     break;
                 case ORDER_TYPES.SWEEP_MINES:
                     resolveSweepMines(state, order);
