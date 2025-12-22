@@ -115,6 +115,11 @@ const applyDamageToFleet = (fleet, damage) => {
     return fleet.mineHitpoints <= 0 || fleet.structure <= 0;
 };
 
+const getFleetCargoMass = (fleet) => {
+    const cargo = fleet.cargo || {};
+    return (cargo.i || 0) + (cargo.b || 0) + (cargo.g || 0) + (cargo.pop || 0);
+};
+
 export const resolveMinefieldLaying = (state) => {
     const orders = state.minefieldLayingOrders || [];
     if (!orders.length) {
@@ -250,6 +255,7 @@ export const resolveStargateJumps = (state) => {
     }
     const destroyed = new Set();
     const raceModifiers = resolveRaceModifiers(state.race).modifiers;
+    const isInterstellarTraveler = state.race?.primaryTrait === "IT";
     orders.forEach(order => {
         const fleet = state.fleets.find(item => item.id === order.fleetId);
         const source = state.stars.find(star => star.id === order.sourcePlanetId);
@@ -263,10 +269,20 @@ export const resolveStargateJumps = (state) => {
         const distance = Math.hypot(destination.x - source.x, destination.y - source.y);
         const maxRange = Math.min(source.stargateRange || 0, destination.stargateRange || 0)
             * (raceModifiers.stargateRangeMultiplier || 1);
-        if (distance > maxRange) {
+        if (maxRange <= 0 || distance > maxRange * 5) {
             return;
         }
         if (Math.hypot(fleet.x - source.x, fleet.y - source.y) > 12) {
+            return;
+        }
+        const cargoMass = getFleetCargoMass(fleet);
+        if (!isInterstellarTraveler && cargoMass > 0) {
+            return;
+        }
+        const massLimit = (Math.min(source.stargateMassLimit || 0, destination.stargateMassLimit || 0) || 1)
+            * (raceModifiers.stargateMassMultiplier || 1);
+        const totalMass = (fleet.mass || 0) + cargoMass;
+        if (totalMass > massLimit * 5) {
             return;
         }
         fleet.x = destination.x;
@@ -279,13 +295,14 @@ export const resolveStargateJumps = (state) => {
                 destinationPlanetId: destination.id
             });
         }
-        const massLimit = (Math.min(source.stargateMassLimit || 0, destination.stargateMassLimit || 0) || 1)
-            * (raceModifiers.stargateMassMultiplier || 1);
         const techDelta = Math.abs((source.stargateTechLevel || 0) - (destination.stargateTechLevel || 0));
         const safetyPenalty = techDelta * 0.05;
-        const misjumpChance = (Math.max(0, (fleet.mass / massLimit) - 1) + safetyPenalty)
-            * (raceModifiers.stargateMisjumpMultiplier || 1);
-        if (misjumpChance > 0) {
+        const massRatio = massLimit > 0 ? totalMass / massLimit : 0;
+        const rangeRatio = maxRange > 0 ? distance / maxRange : 0;
+        const unsafeRatio = Math.max(massRatio, rangeRatio);
+        if (unsafeRatio > 1) {
+            const misjumpChance = (Math.max(0, unsafeRatio - 1) + safetyPenalty)
+                * (raceModifiers.stargateMisjumpMultiplier || 1);
             const roll = state.rng.nextInt(1000) / 1000;
             if (roll < misjumpChance) {
                 const damageRatio = 0.2 + (state.rng.nextInt(50) / 100);

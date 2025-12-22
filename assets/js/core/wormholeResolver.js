@@ -40,6 +40,41 @@ const getEndpoints = (wormhole) => {
     return null;
 };
 
+const getDriftMagnitude = (state, wormhole) => {
+    if (Number.isFinite(wormhole?.driftPerYear)) {
+        return wormhole.driftPerYear;
+    }
+    if (Number.isFinite(wormhole?.drift)) {
+        return wormhole.drift;
+    }
+    const ruleDrift = state.rules?.wormholes?.driftPerYear;
+    if (Number.isFinite(ruleDrift)) {
+        return ruleDrift;
+    }
+    return 1;
+};
+
+const rollDrift = (state, magnitude) => {
+    if (magnitude <= 0) {
+        return 0;
+    }
+    const rng = state.rng;
+    const roll = rng?.nextInt ? (rng.nextInt(2001) - 1000) : Math.floor(Math.random() * 2001) - 1000;
+    return (roll / 1000) * magnitude;
+};
+
+const applyEndpointDrift = (state, wormhole, endpoint) => {
+    if (!endpoint) {
+        return;
+    }
+    const magnitude = getDriftMagnitude(state, wormhole);
+    if (magnitude <= 0) {
+        return;
+    }
+    endpoint.x = Math.round(endpoint.x + rollDrift(state, magnitude));
+    endpoint.y = Math.round(endpoint.y + rollDrift(state, magnitude));
+};
+
 export const resolveWormholes = (state) => {
     const wormholes = state.wormholes || [];
     if (!Array.isArray(wormholes) || wormholes.length === 0) {
@@ -48,6 +83,11 @@ export const resolveWormholes = (state) => {
     const relocated = new Set();
     const destroyed = new Set();
     wormholes.forEach(wormhole => {
+        applyEndpointDrift(state, wormhole, wormhole.entry || wormhole.a || wormhole.from);
+        applyEndpointDrift(state, wormhole, wormhole.exit || wormhole.b || wormhole.to);
+        if (Array.isArray(wormhole.endpoints)) {
+            wormhole.endpoints.forEach(endpoint => applyEndpointDrift(state, wormhole, endpoint));
+        }
         const endpoints = getEndpoints(wormhole);
         if (!endpoints) {
             return;
