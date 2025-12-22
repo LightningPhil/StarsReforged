@@ -339,6 +339,8 @@ export const Renderer = {
             }
             const isSel = Game.selection && Game.selection.type === 'star' && Game.selection.id === star.id;
             const info = star.visible ? star : star.snapshot;
+            const intelEntry = Game.planetKnowledge?.[1]?.[star.id];
+            const hasOldIntel = !star.visible && star.known && intelEntry?.turn_seen != null;
             const col = info.owner === 1 ? '#00f0ff' : (info.owner ? '#ff0055' : '#ffffff');
             const alpha = star.visible ? 1 : 0.35;
 
@@ -355,6 +357,20 @@ export const Renderer = {
                 ctx.fillStyle = '#889';
                 ctx.font = '10px monospace';
                 ctx.fillText(star.name, star.x + 10, star.y);
+            }
+
+            if (hasOldIntel) {
+                const age = Math.max(0, Game.turnCount - intelEntry.turn_seen);
+                const markerAlpha = Math.max(0.25, 0.7 - age * 0.05);
+                ctx.save();
+                ctx.strokeStyle = `rgba(255, 255, 255, ${markerAlpha})`;
+                ctx.lineWidth = 1;
+                ctx.setLineDash([3, 3]);
+                ctx.beginPath();
+                ctx.arc(star.x, star.y, 12, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.setLineDash([]);
+                ctx.restore();
             }
 
             if (isSel) {

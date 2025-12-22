@@ -1061,6 +1061,7 @@ const resolveVisibility = (state) => {
     state.wormholes = state.wormholes || [];
     const raceModifiers = resolveRaceModifiers(state.race).modifiers;
     const packetCloak = raceModifiers.packetPhysics ? 50 : 0;
+    const hiddenFieldCloak = 75;
 
     state.players.forEach(player => {
         const playerId = player.id;
@@ -1094,6 +1095,7 @@ const resolveVisibility = (state) => {
             .sort((a, b) => a.id - b.id)
             .forEach(star => {
                 const intelState = getIntelState(scanners, star);
+                const knownEntry = planetKnowledge[star.id];
                 starVisibility[star.id] = intelState;
                 if (intelState !== "none") {
                     planetKnowledge[star.id] = {
@@ -1110,11 +1112,14 @@ const resolveVisibility = (state) => {
                     if (intelState !== "none") {
                         star.visible = true;
                         star.known = true;
-                        if (intelState !== "visible") {
-                            star.updateSnapshot();
-                        }
-                    } else if (star.known) {
+                        star.snapshot = planetKnowledge[star.id].snapshot;
+                        star.lastSeenTurn = state.turnCount;
+                    } else {
+                        const restored = knownEntry?.snapshot ?? null;
                         star.visible = false;
+                        star.known = Boolean(knownEntry);
+                        star.snapshot = restored;
+                        star.lastSeenTurn = knownEntry?.turn_seen ?? null;
                     }
                 }
             });
@@ -1146,7 +1151,7 @@ const resolveVisibility = (state) => {
             if (minefield.visibility === "all" || minefield.ownerEmpireId === playerId) {
                 intelState = "penetrated";
             } else {
-                intelState = getIntelState(scanners, minefield.center);
+                intelState = getIntelState(scanners, minefield.center, hiddenFieldCloak);
             }
             if (intelState === "none") {
                 return;
@@ -1172,7 +1177,7 @@ const resolveVisibility = (state) => {
             state.wormholeIntel[playerId] = [];
         }
         state.wormholes.forEach(wormhole => {
-            const intelState = getIntelState(scanners, wormhole.entry || wormhole);
+            const intelState = getIntelState(scanners, wormhole.entry || wormhole, hiddenFieldCloak);
             if (intelState === "none") {
                 return;
             }
