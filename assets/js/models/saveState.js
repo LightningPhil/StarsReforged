@@ -60,7 +60,8 @@ export const PLAYER_STATE_SCHEMA = {
     packets: [],
     orders: [],
     messages: [],
-    shipDesigns: []
+    shipDesigns: [],
+    planet_knowledge: []
 };
 
 export const ORDERS_STATE_SCHEMA = {

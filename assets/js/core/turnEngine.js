@@ -127,6 +127,16 @@ const cloneGameState = (state) => ({
             endpoints: record.endpoints ? record.endpoints.map(endpoint => ({ ...endpoint })) : null
         }))
     ]))) : {},
+    planetKnowledge: state.planetKnowledge ? Object.fromEntries(Object.entries(state.planetKnowledge).map(([playerId, entries]) => ([
+        playerId,
+        Object.fromEntries(Object.entries(entries).map(([starId, entry]) => ([
+            starId,
+            {
+                ...entry,
+                snapshot: entry.snapshot ? { ...entry.snapshot } : null
+            }
+        ])))
+    ]))) : {},
     messages: state.messages.map(cloneMessage),
     battles: state.battles.slice(),
     sectorScans: state.sectorScans.map(scan => ({ ...scan })),
@@ -258,6 +268,25 @@ const getIntelState = (scanners, target, cloakPercent = 0) => {
     }
     return "visible";
 };
+
+const createPlanetSnapshot = (star) => ({
+    owner: star.owner,
+    pop: star.pop,
+    mins: { ...star.mins },
+    concentration: { ...star.concentration },
+    environment: { ...star.environment },
+    def: { ...star.def },
+    habitability: star.habitability,
+    deathRate: star.deathRate,
+    factories: star.factories,
+    mines: star.mines,
+    terraforming: star.terraforming ? { ...star.terraforming } : null,
+    autoBuild: star.autoBuild ? { ...star.autoBuild } : null,
+    hasStargate: star.hasStargate,
+    stargateMassLimit: star.stargateMassLimit,
+    stargateRange: star.stargateRange,
+    stargateTechLevel: star.stargateTechLevel
+});
 
 const calculateFuelUsage = (fleet, warpSpeed, distance) => {
     if (distance <= 0) {
@@ -472,115 +501,156 @@ const resolveResearch = (state) => {
 };
 
 const resolveVisibility = (state) => {
-    state.activeScanners = [];
     state.sectorScans = state.sectorScans.filter(scan => scan.expires >= state.turnCount);
-    state.stars
-        .slice()
-        .sort((a, b) => a.id - b.id)
-        .forEach(star => {
-            if (star.owner === 1) {
-                state.activeScanners.push({ x: star.x, y: star.y, r: 260, owner: 1 });
-            }
-        });
-    state.fleets
-        .slice()
-        .sort((a, b) => a.id - b.id)
-        .forEach(fleet => {
-            if (fleet.owner === 1) {
-                const range = getFleetScanRange(state, fleet);
-                state.activeScanners.push({ x: fleet.x, y: fleet.y, r: range, owner: 1 });
-            }
-        });
-    state.sectorScans.forEach(scan => state.activeScanners.push(scan));
-
-    state.stars
-        .slice()
-        .sort((a, b) => a.id - b.id)
-        .forEach(star => {
-            const intelState = getIntelState(state.activeScanners, star);
-            star.intelState = intelState;
-            if (intelState !== "none") {
-                star.visible = true;
-                star.known = true;
-                if (intelState !== "visible") {
-                    star.updateSnapshot();
-                }
-            } else if (star.known) {
-                star.visible = false;
-            }
-        });
-
-    state.fleets.forEach(fleet => {
-        if (fleet.owner === 1) {
-            fleet.intelState = "penetrated";
-            fleet.cloak = getFleetCloakPercent(state, fleet);
-            return;
-        }
-        const cloak = getFleetCloakPercent(state, fleet);
-        fleet.cloak = cloak;
-        fleet.intelState = getIntelState(state.activeScanners, fleet, cloak);
-    });
-
-    state.minefields.forEach(minefield => {
-        let intelState = "none";
-        if (minefield.visibility === "all" || minefield.ownerEmpireId === 1) {
-            intelState = "penetrated";
-        } else {
-            intelState = getIntelState(state.activeScanners, minefield.center);
-        }
-        if (intelState === "none") {
-            return;
-        }
-        const intel = {
-            id: minefield.id,
-            center: { ...minefield.center },
-            radius: intelState !== "visible" ? minefield.radius : minefield.radius,
-            estimatedStrength: intelState === "visible" ? null : Math.ceil(minefield.strength),
-            ownerEmpireId: intelState === "penetrated" ? minefield.ownerEmpireId : null,
-            intelState,
-            lastSeenTurn: state.turnCount
-        };
-        if (!state.minefieldIntel) {
-            state.minefieldIntel = {};
-        }
-        if (!state.minefieldIntel[1]) {
-            state.minefieldIntel[1] = [];
-        }
-        const existing = state.minefieldIntel[1].find(entry => entry.id === minefield.id);
-        if (existing) {
-            Object.assign(existing, intel);
-        } else {
-            state.minefieldIntel[1].push(intel);
-        }
-    });
-
-    state.wormholes = state.wormholes || [];
+    state.activeScanners = [];
+    state.visibilityByPlayer = {};
+    state.planetKnowledge = state.planetKnowledge || {};
+    state.minefieldIntel = state.minefieldIntel || {};
     state.wormholeIntel = state.wormholeIntel || {};
-    if (!state.wormholeIntel[1]) {
-        state.wormholeIntel[1] = [];
-    }
-    state.wormholes.forEach(wormhole => {
-        const intelState = getIntelState(state.activeScanners, wormhole.entry || wormhole);
-        if (intelState === "none") {
-            return;
+    state.wormholes = state.wormholes || [];
+
+    state.players.forEach(player => {
+        const playerId = player.id;
+        const scanners = [];
+        state.stars
+            .slice()
+            .sort((a, b) => a.id - b.id)
+            .forEach(star => {
+                if (star.owner === playerId) {
+                    scanners.push({ x: star.x, y: star.y, r: 260, owner: playerId });
+                }
+            });
+        state.fleets
+            .slice()
+            .sort((a, b) => a.id - b.id)
+            .forEach(fleet => {
+                if (fleet.owner === playerId) {
+                    const range = getFleetScanRange(state, fleet);
+                    scanners.push({ x: fleet.x, y: fleet.y, r: range, owner: playerId });
+                }
+            });
+        state.sectorScans.filter(scan => scan.owner === playerId).forEach(scan => scanners.push(scan));
+
+        const starVisibility = {};
+        const fleetVisibility = {};
+        const packetVisibility = {};
+        const planetKnowledge = state.planetKnowledge[playerId] || {};
+
+        state.stars
+            .slice()
+            .sort((a, b) => a.id - b.id)
+            .forEach(star => {
+                const intelState = getIntelState(scanners, star);
+                starVisibility[star.id] = intelState;
+                if (intelState !== "none") {
+                    planetKnowledge[star.id] = {
+                        id: star.id,
+                        name: star.name,
+                        x: star.x,
+                        y: star.y,
+                        snapshot: createPlanetSnapshot(star),
+                        turn_seen: state.turnCount
+                    };
+                }
+                if (playerId === 1) {
+                    star.intelState = intelState;
+                    if (intelState !== "none") {
+                        star.visible = true;
+                        star.known = true;
+                        if (intelState !== "visible") {
+                            star.updateSnapshot();
+                        }
+                    } else if (star.known) {
+                        star.visible = false;
+                    }
+                }
+            });
+
+        state.fleets.forEach(fleet => {
+            const cloak = getFleetCloakPercent(state, fleet);
+            const intelState = fleet.owner === playerId
+                ? "penetrated"
+                : getIntelState(scanners, fleet, cloak);
+            fleetVisibility[fleet.id] = intelState;
+            if (playerId === 1) {
+                fleet.intelState = intelState;
+                fleet.cloak = cloak;
+            }
+        });
+
+        state.packets.forEach(packet => {
+            const intelState = packet.owner === playerId
+                ? "penetrated"
+                : getIntelState(scanners, packet);
+            packetVisibility[packet.id] = intelState;
+        });
+
+        if (!state.minefieldIntel[playerId]) {
+            state.minefieldIntel[playerId] = [];
         }
-        const intel = {
-            id: wormhole.id ?? null,
-            entry: wormhole.entry ? { ...wormhole.entry } : null,
-            exit: intelState === "penetrated" ? (wormhole.exit ? { ...wormhole.exit } : null) : null,
-            endpoints: intelState === "penetrated" && wormhole.endpoints
-                ? wormhole.endpoints.map(endpoint => ({ ...endpoint }))
-                : null,
-            intelState,
-            lastSeenTurn: state.turnCount
+        state.minefields.forEach(minefield => {
+            let intelState = "none";
+            if (minefield.visibility === "all" || minefield.ownerEmpireId === playerId) {
+                intelState = "penetrated";
+            } else {
+                intelState = getIntelState(scanners, minefield.center);
+            }
+            if (intelState === "none") {
+                return;
+            }
+            const intel = {
+                id: minefield.id,
+                center: { ...minefield.center },
+                radius: intelState !== "visible" ? minefield.radius : minefield.radius,
+                estimatedStrength: intelState === "visible" ? null : Math.ceil(minefield.strength),
+                ownerEmpireId: intelState === "penetrated" ? minefield.ownerEmpireId : null,
+                intelState,
+                lastSeenTurn: state.turnCount
+            };
+            const existing = state.minefieldIntel[playerId].find(entry => entry.id === minefield.id);
+            if (existing) {
+                Object.assign(existing, intel);
+            } else {
+                state.minefieldIntel[playerId].push(intel);
+            }
+        });
+
+        if (!state.wormholeIntel[playerId]) {
+            state.wormholeIntel[playerId] = [];
+        }
+        state.wormholes.forEach(wormhole => {
+            const intelState = getIntelState(scanners, wormhole.entry || wormhole);
+            if (intelState === "none") {
+                return;
+            }
+            const intel = {
+                id: wormhole.id ?? null,
+                entry: wormhole.entry ? { ...wormhole.entry } : null,
+                exit: intelState === "penetrated" ? (wormhole.exit ? { ...wormhole.exit } : null) : null,
+                endpoints: intelState === "penetrated" && wormhole.endpoints
+                    ? wormhole.endpoints.map(endpoint => ({ ...endpoint }))
+                    : null,
+                intelState,
+                lastSeenTurn: state.turnCount
+            };
+            const existing = state.wormholeIntel[playerId].find(entry => entry.id === intel.id);
+            if (existing) {
+                Object.assign(existing, intel);
+            } else {
+                state.wormholeIntel[playerId].push(intel);
+            }
+        });
+
+        state.visibilityByPlayer[playerId] = {
+            scanners,
+            stars: starVisibility,
+            fleets: fleetVisibility,
+            packets: packetVisibility
         };
-        const existing = state.wormholeIntel[1].find(entry => entry.id === intel.id);
-        if (existing) {
-            Object.assign(existing, intel);
-        } else {
-            state.wormholeIntel[1].push(intel);
-        }
+        state.planetKnowledge[playerId] = planetKnowledge;
     });
+
+    state.activeScanners = state.visibilityByPlayer[1]?.scanners || [];
 };
 
 const resolveColonization = (state) => {

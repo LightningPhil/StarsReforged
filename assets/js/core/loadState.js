@@ -28,6 +28,21 @@ const parseBigInt = (value, fallback = 0n) => {
 
 const normalizeArray = (value) => (Array.isArray(value) ? value : []);
 
+const normalizePlanetKnowledgeEntries = (entries) => normalizeArray(entries).map(entry => ({
+    id: entry?.id ?? null,
+    name: entry?.name ?? null,
+    x: entry?.x ?? null,
+    y: entry?.y ?? null,
+    snapshot: entry?.snapshot ? { ...entry.snapshot } : null,
+    turn_seen: entry?.turn_seen ?? null
+})).filter(entry => Number.isFinite(entry.id));
+
+const mapPlanetKnowledgeById = (entries) => normalizePlanetKnowledgeEntries(entries)
+    .reduce((acc, entry) => {
+        acc[entry.id] = entry;
+        return acc;
+    }, {});
+
 const migrateUniverseState = (state) => {
     if (!state || typeof state !== "object") {
         return { state: null, migrated: false };
@@ -96,6 +111,7 @@ const migratePlayerState = (state) => {
     next.messages = normalizeArray(next.messages);
     next.shipDesigns = normalizeArray(next.shipDesigns);
     next.diplomacy = next.diplomacy || { status: {}, lastWarning: 0 };
+    next.planet_knowledge = normalizeArray(next.planet_knowledge);
     return { state: next, migrated };
 };
 
@@ -410,7 +426,8 @@ export const deserializePlayerState = (state) => {
         packets: migratedState.packets || [],
         orders: migratedState.orders || [],
         messages: migratedState.messages || [],
-        shipDesigns: migratedState.shipDesigns || []
+        shipDesigns: migratedState.shipDesigns || [],
+        planet_knowledge: normalizePlanetKnowledgeEntries(migratedState.planet_knowledge)
     };
 };
 
@@ -463,6 +480,12 @@ export const assembleGameState = ({ universeState, playerState, rules, aiConfig 
         base.diplomacy = playerState.diplomacy || base.diplomacy;
         base.messages = playerState.messages || base.messages;
         base.orders = playerState.orders || base.orders;
+        if (playerState.planet_knowledge?.length) {
+            if (!base.planetKnowledge) {
+                base.planetKnowledge = {};
+            }
+            base.planetKnowledge[playerId] = mapPlanetKnowledgeById(playerState.planet_knowledge);
+        }
     }
     return base;
 };

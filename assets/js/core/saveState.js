@@ -110,6 +110,15 @@ const serializeMessage = (message) => ({
     priority: message.priority
 });
 
+const serializePlanetKnowledgeEntry = (entry) => ({
+    id: entry.id,
+    name: entry.name,
+    x: entry.x,
+    y: entry.y,
+    snapshot: entry.snapshot ? { ...entry.snapshot } : null,
+    turn_seen: entry.turn_seen ?? null
+});
+
 export const serializeUniverseState = (gameState) => createUniverseStateDTO({
     turnCount: gameState.turnCount,
     year: gameState.year,
@@ -177,6 +186,20 @@ export const serializeUniverseState = (gameState) => createUniverseStateDTO({
 export const serializePlayerState = (gameState, playerId) => {
     const player = gameState.players?.find(entry => entry.id === playerId);
     const economy = gameState.economy?.[playerId];
+    const visibility = gameState.visibilityByPlayer?.[playerId];
+    const starVisibility = visibility?.stars || null;
+    const fleetVisibility = visibility?.fleets || null;
+    const packetVisibility = visibility?.packets || null;
+    const planetKnowledge = gameState.planetKnowledge?.[playerId] || {};
+    const visibleStars = starVisibility
+        ? gameState.stars.filter(star => starVisibility[star.id] && starVisibility[star.id] !== "none")
+        : gameState.stars.filter(star => star.owner === playerId);
+    const visibleFleets = fleetVisibility
+        ? gameState.fleets.filter(fleet => fleetVisibility[fleet.id] && fleetVisibility[fleet.id] !== "none")
+        : gameState.fleets.filter(fleet => fleet.owner === playerId);
+    const visiblePackets = packetVisibility
+        ? gameState.packets.filter(packet => packetVisibility[packet.id] && packetVisibility[packet.id] !== "none")
+        : gameState.packets.filter(packet => packet.owner === playerId);
     return createPlayerStateDTO({
         playerId,
         turnCount: gameState.turnCount,
@@ -192,15 +215,21 @@ export const serializePlayerState = (gameState, playerId) => {
             ...gameState.diplomacy,
             status: { ...gameState.diplomacy?.status }
         },
-        planets: gameState.stars.filter(star => star.owner === playerId).map(serializeStar),
-        fleets: gameState.fleets.filter(fleet => fleet.owner === playerId).map(serializeFleet),
-        packets: gameState.packets.filter(packet => packet.owner === playerId).map(serializePacket),
+        planets: visibleStars.map(star => serializeStar({
+            ...star,
+            visible: true,
+            known: true,
+            snapshot: planetKnowledge[star.id]?.snapshot ?? star.snapshot
+        })),
+        fleets: visibleFleets.map(serializeFleet),
+        packets: visiblePackets.map(serializePacket),
         orders: gameState.orders ? gameState.orders.filter(order => order.issuerId === playerId).map(serializeOrder) : [],
         messages: gameState.messages ? gameState.messages.filter(message => message.recipient === playerId).map(serializeMessage) : [],
         shipDesigns: gameState.shipDesigns?.[playerId] ? gameState.shipDesigns[playerId].map(design => ({
             ...design,
             finalStats: { ...design.finalStats }
-        })) : []
+        })) : [],
+        planet_knowledge: Object.values(planetKnowledge).map(serializePlanetKnowledgeEntry)
     });
 };
 
