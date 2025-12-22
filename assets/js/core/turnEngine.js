@@ -5,6 +5,7 @@ import { CombatResolver } from "./combatResolver.js";
 import { OrderResolver } from "./orderResolver.js";
 import {
     resolveMinefieldDecay,
+    resolveMinefieldDetonation,
     resolveMinefieldLaying,
     resolveMinefieldSweeping,
     resolveMinefieldTransitDamage,
@@ -59,7 +60,8 @@ const cloneFleet = (fleet) => {
         waypoints: fleet.waypoints,
         cargo: fleet.cargo,
         shipStacks: fleet.shipStacks,
-        warp: fleet.warp
+        warp: fleet.warp,
+        battlePlan: fleet.battlePlan
     });
     clone.fuel = fleet.fuel;
     clone.warp = fleet.warp;
@@ -77,6 +79,7 @@ const cloneFleet = (fleet) => {
     clone.cargoMass = fleet.cargoMass;
     clone.fuelPool = fleet.fuelPool;
     clone.colonize = fleet.colonize || false;
+    clone.battlePlan = fleet.battlePlan ? { ...fleet.battlePlan } : null;
     return clone;
 };
 
@@ -174,6 +177,7 @@ const cloneGameState = (state) => ({
     movementPaths: [],
     minefieldLayingOrders: [],
     minefieldSweepOrders: [],
+    minefieldDetonationOrders: [],
     stargateOrders: [],
     fleetMergeOrders: [],
     fleetSplitOrders: [],
@@ -1378,6 +1382,7 @@ export const TurnEngine = {
         resolveFleetTransferOrders(state);
         resolveFleetScrapOrders(state);
         resolveMinefieldSweeping(state);
+        resolveMinefieldDetonation(state);
         resolveStargateJumps(state);
         resolveMovement(state);
         resolveWaypointTasks(state);

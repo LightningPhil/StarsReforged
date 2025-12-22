@@ -229,6 +229,8 @@ const sortTargets = (attacker, plan, ranges) => (a, b) => {
                 return compare("durability", "desc");
             case "weakest":
                 return compare("durability", "asc");
+            case "value":
+                return compare("damage", "desc");
             default:
                 return 0;
         }
@@ -271,6 +273,15 @@ const selectTarget = (attacker, combatants, ranges) => {
 const getPreferredRange = (stack, currentRange) => {
     const tactic = stack.battlePlan?.tactic || "balanced";
     const maxRange = Math.max(stack.beamRange, stack.torpedoRange, 1);
+    if (tactic === "engage") {
+        return 0;
+    }
+    if (tactic === "disengage") {
+        return 4;
+    }
+    if (tactic === "maximize_damage") {
+        return maxRange;
+    }
     if (tactic === "hold") {
         return currentRange;
     }

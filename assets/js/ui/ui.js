@@ -341,6 +341,17 @@ export const UI = {
         this.updateComms();
     },
 
+    queueBattlePlan: function(fleetId, primary, tactic) {
+        const fleet = Game.fleets.find(item => item.id === fleetId);
+        if (!fleet || fleet.owner !== 1) {
+            return;
+        }
+        Game.queueOrder(new Order(ORDER_TYPES.UPDATE_BATTLE_PLAN, 1, { fleetId, primary, tactic }));
+        Game.logMsg(`BATTLE PLAN: ${fleet.name} set to ${primary} / ${tactic}.`, "Command");
+        this.updateSide();
+        this.updateComms();
+    },
+
     setScreen: function(id) {
         document.querySelectorAll('.screen-overlay').forEach(el => el.classList.remove('active'));
         document.querySelectorAll('.icon-btn').forEach(el => el.classList.remove('active'));
@@ -506,7 +517,17 @@ export const UI = {
 
     setupDesignWorkshop: function() {
         const hullSelect = document.getElementById('design-hull');
-        const hulls = Game.getHulls();
+        const raceTraits = new Set([Game.race?.primaryTrait, ...(Game.race?.lesserTraits || [])].filter(Boolean));
+        const hulls = Game.getHulls().filter(hull => {
+            const required = [
+                ...(hull.requiresTraits || []),
+                ...(hull.reqTrait ? [hull.reqTrait] : [])
+            ];
+            if (!required.length) {
+                return true;
+            }
+            return required.every(trait => raceTraits.has(trait));
+        });
         if (!hullSelect) {
             return;
         }
@@ -545,15 +566,19 @@ export const UI = {
                 select.dataset.slotType = slotType;
                 const detail = document.createElement('div');
                 detail.className = 'slot-detail';
-                const components = getComponentsBySlot(slotType);
-                getComponentsBySlot(slotType).forEach(component => {
+                const components = getComponentsBySlot(slotType, Game.race);
+                components.forEach(component => {
                     const opt = document.createElement('option');
                     opt.value = component.id;
                     const missingTech = Object.entries(component.tech || {}).filter(([fieldId, level]) => {
                         const current = techState?.fields?.[fieldId]?.level ?? 0;
                         return current < level;
                     });
-                    const missingTraits = (component.requiresTraits || []).filter(trait => !raceTraits.has(trait));
+                    const requiredTraits = [
+                        ...(component.requiresTraits || []),
+                        ...(component.reqTrait ? [component.reqTrait] : [])
+                    ];
+                    const missingTraits = requiredTraits.filter(trait => !raceTraits.has(trait));
                     if (missingTech.length || missingTraits.length) {
                         opt.disabled = true;
                     }
@@ -561,7 +586,8 @@ export const UI = {
                         ? ` | Req ${missingTech.map(([fieldId, level]) => `${fieldId} ${level}`).join(', ')}`
                         : '';
                     const traitTag = missingTraits.length ? ` | Req ${missingTraits.join(', ')}` : '';
-                    opt.text = `${component.name} (${component.cost}cr)${techTag}${traitTag}`;
+                    const raceTag = requiredTraits.length ? ` | Trait ${requiredTraits.join(', ')}` : '';
+                    opt.text = `${component.name} (${component.cost}cr)${techTag}${raceTag}${traitTag}`;
                     select.add(opt);
                 });
                 select.addEventListener('change', () => {
@@ -815,6 +841,25 @@ export const UI = {
             h += `<div class="stat-row"><span>Fuel</span> <span class="val ${fleet.fuel < 20 ? 'alert' : ''}">${fleet.fuel.toFixed(0)}</span></div>`;
             h += `<div class="stat-row"><span>Range</span> <span class="val">${fleet.design.range}</span></div>`;
             h += `<div class="stat-row"><span>Mission</span> <span class="val">${fleet.dest ? 'Transit' : 'Orbit'}</span></div>`;
+            const battlePlan = fleet.battlePlan || {};
+            const planPrimary = battlePlan.primary || "closest";
+            const planTactic = battlePlan.tactic || "engage";
+            h += `<div class="panel-block"><h3>Battle Settings</h3>`;
+            h += `<div class="stat-row"><span>Primary</span> <select id="battle-primary">
+                <option value="closest" ${planPrimary === "closest" ? "selected" : ""}>Closest</option>
+                <option value="weakest" ${planPrimary === "weakest" ? "selected" : ""}>Weakest</option>
+                <option value="value" ${planPrimary === "value" ? "selected" : ""}>Value</option>
+                <option value="starbase" ${planPrimary === "starbase" ? "selected" : ""}>Starbase</option>
+                <option value="capital" ${planPrimary === "capital" ? "selected" : ""}>Capital</option>
+            </select></div>`;
+            h += `<div class="stat-row"><span>Tactic</span> <select id="battle-tactic">
+                <option value="engage" ${planTactic === "engage" ? "selected" : ""}>Engage</option>
+                <option value="disengage" ${planTactic === "disengage" ? "selected" : ""}>Disengage</option>
+                <option value="maximize_damage" ${planTactic === "maximize_damage" ? "selected" : ""}>Maximize Damage</option>
+                <option value="hold" ${planTactic === "hold" ? "selected" : ""}>Hold</option>
+            </select></div>`;
+            h += `<button class="action" id="queue-battle-plan" data-fleet-id="${fleet.id}">SET BATTLE PLAN</button>`;
+            h += `</div>`;
             if (fleet.design.flags.includes('minelayer')) {
                 h += `<div class="panel-block"><h3>Minefield</h3>`;
                 h += `<div class="stat-row"><span>Mine Units</span> <span class="val">${fleet.mineUnits}</span></div>`;
@@ -958,6 +1003,21 @@ export const UI = {
                     return;
                 }
                 this.queueStargateJump(fleetId, sourceId, destinationId);
+            });
+        }
+
+        const battlePlanButton = document.getElementById('queue-battle-plan');
+        if (battlePlanButton) {
+            battlePlanButton.addEventListener('click', () => {
+                const fleetId = parseInt(battlePlanButton.dataset.fleetId, 10);
+                const primary = document.getElementById('battle-primary')?.value;
+                const tactic = document.getElementById('battle-tactic')?.value;
+                if (!primary || !tactic) {
+                    Game.logMsg("ORDER REJECTED: Battle plan incomplete.", "System", "high");
+                    this.updateComms();
+                    return;
+                }
+                this.queueBattlePlan(fleetId, primary, tactic);
             });
         }
 

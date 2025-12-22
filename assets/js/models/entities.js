@@ -104,7 +104,7 @@ class ShipDesign {
 }
 
 class Fleet {
-    constructor({ id, owner, x, y, name, design, waypoints = null, cargo = null, shipStacks = null, warp = null }) {
+    constructor({ id, owner, x, y, name, design, waypoints = null, cargo = null, shipStacks = null, warp = null, battlePlan = null }) {
         this.id = id;
         this.owner = owner;
         this.x = x;
@@ -118,6 +118,7 @@ class Fleet {
         this.waypoints = Array.isArray(waypoints) ? waypoints.map(point => ({ ...point })) : [];
         this.cargoCapacity = design.cargo || 0;
         this.cargo = cargo ? { ...cargo } : { i: 0, b: 0, g: 0, pop: 0 };
+        this.battlePlan = battlePlan ? { ...battlePlan } : null;
         this.shipStacks = Array.isArray(shipStacks) && shipStacks.length
             ? shipStacks.map(stack => ({ ...stack }))
             : [{ designId: this.designId, count: 1 }];

@@ -245,6 +245,49 @@ export const resolveMinefieldSweeping = (state) => {
     state.minefields = state.minefields.filter(field => field.strength > 0);
 };
 
+export const resolveMinefieldDetonation = (state) => {
+    const orders = state.minefieldDetonationOrders || [];
+    if (!orders.length) {
+        return;
+    }
+    const destroyed = new Set();
+    orders.forEach(order => {
+        const minefield = state.minefields.find(field => field.id === order.minefieldId);
+        if (!minefield) {
+            return;
+        }
+        const typeRules = getMinefieldTypeRules(state, minefield.type);
+        const baseDamage = Math.ceil(minefield.strength * (typeRules.damageMultiplier || 1) * 0.1);
+        state.fleets.forEach(fleet => {
+            if (dist(fleet, minefield.center) > minefield.radius) {
+                return;
+            }
+            if (baseDamage <= 0) {
+                return;
+            }
+            const destroyedShip = applyDamageToFleet(fleet, baseDamage);
+            if (state.turnEvents) {
+                state.turnEvents.push({
+                    type: "MINEFIELD_DETONATION",
+                    fleetId: fleet.id,
+                    minefieldId: minefield.id,
+                    damage: baseDamage,
+                    ownerEmpireId: minefield.ownerEmpireId
+                });
+            }
+            if (destroyedShip) {
+                destroyed.add(fleet.id);
+            }
+        });
+        minefield.strength = Math.max(0, minefield.strength * 0.75);
+        minefield.radius = minefield.strength > 0 ? Math.sqrt(minefield.strength / Math.PI) : 0;
+    });
+    if (destroyed.size) {
+        state.fleets = state.fleets.filter(fleet => !destroyed.has(fleet.id));
+    }
+    state.minefields = state.minefields.filter(field => field.strength > 0);
+};
+
 export const resolveMinefieldTransitDamage = (state) => {
     const movementPaths = state.movementPaths || [];
     if (!movementPaths.length || !state.minefields.length) {
@@ -290,6 +333,7 @@ export const resolveMinefieldTransitDamage = (state) => {
                 if (minefield.type === "speed_trap") {
                     fleet.fuel = 0;
                     fleet.dest = null;
+                    fleet.warp = 0;
                 }
                 return;
             }
@@ -314,6 +358,7 @@ export const resolveMinefieldTransitDamage = (state) => {
             if (minefield.type === "speed_trap") {
                 fleet.fuel = 0;
                 fleet.dest = null;
+                fleet.warp = 0;
             }
         });
     });
