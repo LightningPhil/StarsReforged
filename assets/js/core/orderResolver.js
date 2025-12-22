@@ -9,6 +9,11 @@ import {
 } from "./technologyResolver.js";
 import { enforceAllocationRules, resolveRaceModifiers } from "./raceTraits.js";
 
+const getRaceForEmpire = (state, empireId) => {
+    const player = state.players?.find(entry => entry.id === empireId);
+    return player?.race || state.race;
+};
+
 const getFleetById = (state, fleetId) => state.fleets.find(fleet => fleet.id === fleetId);
 const getStarById = (state, starId) => state.stars.find(star => star.id === starId);
 const DEFAULT_MINERAL_RATIO = { i: 0.4, b: 0.3, g: 0.3 };
@@ -55,7 +60,8 @@ const resolveSetWaypoints = (state, order) => {
             x: point?.x,
             y: point?.y,
             task: point?.task ?? null,
-            data: point?.data ?? null
+            data: point?.data ?? null,
+            speed: Number.isFinite(point?.speed) ? Math.max(1, Math.floor(point.speed)) : null
         }))
         .filter(point => Number.isFinite(point.x) && Number.isFinite(point.y))
         .map(point => ({
@@ -201,12 +207,10 @@ const resolveScanSector = (state, order) => {
     });
 };
 
-const withdrawMinerals = (state, ownerId, amount) => {
-    const economy = state.economy?.[ownerId];
-    if (!economy) {
+const withdrawMinerals = (stock, amount) => {
+    if (!stock) {
         return false;
     }
-    const stock = economy.mineralStock;
     let remaining = amount;
     const take = (key) => {
         const used = Math.min(stock[key], remaining);
@@ -216,7 +220,6 @@ const withdrawMinerals = (state, ownerId, amount) => {
     take("i");
     take("b");
     take("g");
-    economy.minerals = stock.i + stock.b + stock.g;
     return remaining <= 0;
 };
 
@@ -237,11 +240,11 @@ const resolveLaunchPacket = (state, order) => {
         logOrderError(state, `Invalid LAUNCH_PACKET payload for ${order.issuerId}.`);
         return;
     }
-    if (!withdrawMinerals(state, order.issuerId, amount)) {
+    if (!withdrawMinerals(origin.mins, amount)) {
         logOrderError(state, `Insufficient minerals for packet launch.`);
         return;
     }
-    const raceModifiers = resolveRaceModifiers(state.race).modifiers;
+    const raceModifiers = resolveRaceModifiers(getRaceForEmpire(state, order.issuerId)).modifiers;
     const efficiency = raceModifiers.massDriverEfficiency || 1;
     const payload = Math.max(0, Math.floor(amount * efficiency));
     if (payload <= 0) {
@@ -330,7 +333,7 @@ const resolveStargateJump = (state, order) => {
         logOrderError(state, `Stargate missing for fleet ${fleet.id}.`);
         return;
     }
-    const raceModifiers = resolveRaceModifiers(state.race).modifiers;
+    const raceModifiers = resolveRaceModifiers(getRaceForEmpire(state, order.issuerId)).modifiers;
     const dx = destination.x - source.x;
     const dy = destination.y - source.y;
     const distance = Math.hypot(dx, dy);
@@ -344,7 +347,7 @@ const resolveStargateJump = (state, order) => {
         logOrderError(state, `Destination out of range for fleet ${fleet.id}.`);
         return;
     }
-    const isInterstellarTraveler = state.race?.primaryTrait === "IT";
+    const isInterstellarTraveler = getRaceForEmpire(state, order.issuerId)?.primaryTrait === "IT";
     const cargoMass = getFleetCargoMass(fleet);
     if (!isInterstellarTraveler && cargoMass > 0) {
         logOrderError(state, `Fleet ${fleet.id} cannot gate cargo without Interstellar Traveler.`);
@@ -456,7 +459,7 @@ const resolveResearch = (state, order) => {
         return;
     }
     const fields = state.rules?.technologyFields || [];
-    const raceModifiers = resolveRaceModifiers(state.race).modifiers;
+    const raceModifiers = resolveRaceModifiers(getRaceForEmpire(state, order.issuerId)).modifiers;
     const allocationRules = (allocation, appliedFields) => enforceAllocationRules(allocation, appliedFields, raceModifiers);
     const allocation = order.payload?.allocation;
     const fieldId = order.payload?.fieldId;

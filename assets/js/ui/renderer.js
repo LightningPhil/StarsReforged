@@ -1,4 +1,5 @@
 import { Game } from "../core/game.js";
+import { Order, ORDER_TYPES } from "../models/orders.js";
 import { dist } from "../core/utils.js";
 
 let ui = null;
@@ -49,9 +50,13 @@ export const Renderer = {
             e.preventDefault();
             if (Game.selection && Game.selection.type === 'fleet') {
                 const w = this.screenToWorld(e.clientX, e.clientY);
-                Game.fleets[Game.selection.id].dest = { x: Math.round(w.x), y: Math.round(w.y) };
-                Game.logMsg("Fleet course plotted.", "Command");
-                ui.updateComms();
+                const fleet = Game.fleets[Game.selection.id];
+                if (fleet) {
+                    const waypoint = { x: Math.round(w.x), y: Math.round(w.y), task: null, data: null, speed: fleet.warp };
+                    Game.queueOrder(new Order(ORDER_TYPES.SET_WAYPOINTS, fleet.owner, { fleetId: fleet.id, waypoints: [waypoint] }));
+                    Game.logMsg("Fleet course plotted.", "Command");
+                    ui.updateComms();
+                }
             }
         });
         this.cvs.addEventListener('mousemove', e => {

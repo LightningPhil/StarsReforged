@@ -14,7 +14,15 @@ const HOMEWORLD_DEPLETION_FLOOR = 30;
 const STANDARD_DEPLETION_FLOOR = 1;
 const DEFAULT_MINERAL_RATIO = { i: 0.4, b: 0.3, g: 0.3 };
 
+const getRaceForEmpire = (state, empireId) => {
+    const player = state.players?.find(entry => entry.id === empireId);
+    return player?.race || state.race;
+};
+
 const normalizeStarEconomy = (star) => {
+    if (!star.mins) {
+        star.mins = { i: 0, b: 0, g: 0 };
+    }
     if (!star.concentration) {
         star.concentration = { ...star.mins };
     }
@@ -235,7 +243,7 @@ const resolveQueue = ({ state, star, productionPoints, raceModifiers }) => {
     }
     const ratios = getMineralRatios(star.queue);
     const result = ensureMineralsForProgress(
-        economy.mineralStock,
+        star.mins,
         ratios,
         desiredProgress,
         raceModifiers?.mineralAlchemyRate || 0
@@ -243,7 +251,7 @@ const resolveQueue = ({ state, star, productionPoints, raceModifiers }) => {
     if (!result || !result.hasEnough) {
         return;
     }
-    economy.mineralStock = {
+    star.mins = {
         i: result.adjusted.i - result.required.i,
         b: result.adjusted.b - result.required.b,
         g: result.adjusted.g - result.required.g
@@ -276,25 +284,26 @@ const resolveQueue = ({ state, star, productionPoints, raceModifiers }) => {
 export const resolvePlanetEconomy = (state) => {
     let taxTotal = 0;
     let industrialOutput = 0;
-    const raceModifiers = resolveRaceModifiers(state.race).modifiers;
-    const alternateReality = isAlternateReality(state.race, raceModifiers);
     state.stars
         .filter(star => star.owner)
         .sort((a, b) => a.id - b.id)
         .forEach(star => {
+            const race = getRaceForEmpire(state, star.owner);
+            const raceModifiers = resolveRaceModifiers(race).modifiers;
+            const alternateReality = isAlternateReality(race, raceModifiers);
             normalizeStarEconomy(star);
             const techState = getTechnologyStateForEmpire(state, star.owner);
             const techModifiers = getTechnologyModifiers(techState);
             applyTerraforming(star, techModifiers, raceModifiers);
-            const habitabilityValue = getHabitabilityScore({ star, race: state.race, techModifiers });
-        star.habitability = Math.round(habitabilityValue);
+            const habitabilityValue = getHabitabilityScore({ star, race, techModifiers });
+            star.habitability = Math.round(habitabilityValue);
             star.deathRate = habitabilityValue < 0 ? Math.round(Math.abs(habitabilityValue / 10) * 100) : 0;
-            const maxPopulation = getMaxPopulation(star, state.race, raceModifiers, alternateReality);
+            const maxPopulation = getMaxPopulation(star, race, raceModifiers, alternateReality);
             if (habitabilityValue < 0) {
                 const losses = Math.floor(star.pop * (Math.abs(habitabilityValue) / 10));
                 star.pop = Math.max(0, Math.floor(star.pop - losses));
             } else if (star.pop < maxPopulation) {
-                const baseGrowthRate = parseGrowthRate(state.race);
+                const baseGrowthRate = parseGrowthRate(race);
                 const growthMultiplier = (techModifiers?.populationGrowth || 1) * (raceModifiers.populationGrowth || 1);
                 const habitabilityMultiplier = Math.max(0, habitabilityValue / 100);
                 const growth = Math.floor(star.pop * baseGrowthRate * growthMultiplier * habitabilityMultiplier);
@@ -341,9 +350,9 @@ export const resolvePlanetEconomy = (state) => {
             const bGain = Math.floor(miningRate * (star.concentration.b / 100) * star.mines);
             const gGain = Math.floor(miningRate * (star.concentration.g / 100) * star.mines);
 
-            economy.mineralStock.i += iGain;
-            economy.mineralStock.b += bGain;
-            economy.mineralStock.g += gGain;
+            star.mins.i += iGain;
+            star.mins.b += bGain;
+            star.mins.g += gGain;
 
             const depletionFloor = isHomeworld(star) ? HOMEWORLD_DEPLETION_FLOOR : STANDARD_DEPLETION_FLOOR;
             applyConcentrationDepletion(star, "i", depletionFloor);
@@ -356,8 +365,22 @@ export const resolvePlanetEconomy = (state) => {
             star.def.facts = star.factories;
         });
 
-    Object.values(state.economy || {}).forEach(entry => {
-        entry.minerals = entry.mineralStock.i + entry.mineralStock.b + entry.mineralStock.g;
+    const mineralTotals = {};
+    state.stars.forEach(star => {
+        if (!star.owner) {
+            return;
+        }
+        if (!mineralTotals[star.owner]) {
+            mineralTotals[star.owner] = { i: 0, b: 0, g: 0 };
+        }
+        mineralTotals[star.owner].i += star.mins?.i || 0;
+        mineralTotals[star.owner].b += star.mins?.b || 0;
+        mineralTotals[star.owner].g += star.mins?.g || 0;
+    });
+    Object.entries(state.economy || {}).forEach(([id, entry]) => {
+        const totals = mineralTotals[id] || { i: 0, b: 0, g: 0 };
+        entry.mineralStock = { ...totals };
+        entry.minerals = totals.i + totals.b + totals.g;
     });
     const playerEconomy = state.economy?.[1];
     if (playerEconomy) {

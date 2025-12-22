@@ -42,6 +42,7 @@ const serializeFleet = (fleet) => ({
     designId: fleet.designId,
     design: fleet.design ? { ...fleet.design, finalStats: { ...fleet.design.finalStats } } : null,
     fuel: fleet.fuel,
+    warp: fleet.warp ?? null,
     dest: fleet.dest ? { ...fleet.dest } : null,
     waypoints: fleet.waypoints ? fleet.waypoints.map(point => ({ ...point })) : [],
     cargo: fleet.cargo ? { ...fleet.cargo } : null,
@@ -137,6 +138,7 @@ export const serializeUniverseState = (gameState) => createUniverseStateDTO({
     aiConfig: gameState.aiConfig,
     players: gameState.players?.map(player => ({
         ...player,
+        race: player.race ? { ...player.race } : null,
         technology: serializeTechnology(player.technology)
     })) || [],
     economy: gameState.economy ? Object.fromEntries(Object.entries(gameState.economy).map(([id, entry]) => ([

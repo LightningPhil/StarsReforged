@@ -1,17 +1,16 @@
-import { Game, bindUI as bindGameUI } from "./core/game.js";
+import { Game } from "./core/game.js";
 import { Renderer, bindUI as bindRendererUI } from "./ui/renderer.js";
 import { UI, bindRenderer as bindUIRenderer } from "./ui/ui.js";
 
-bindGameUI(UI);
-bindRendererUI(UI);
-bindUIRenderer(Renderer);
-
 window.Game = Game;
 window.UI = UI;
+bindUIRenderer(Renderer);
+bindRendererUI(UI);
 
 window.onload = () => {
     Game.init()
         .then(() => {
+            UI.init();
             Renderer.init();
         })
         .catch(error => {

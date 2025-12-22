@@ -88,6 +88,7 @@ export const UI = {
         const aiPlayers = Game.players.filter(player => player.type === "ai" && player.status === "active");
         if (!aiPlayers.length || !this.aiWorker) {
             Game.turn();
+            this.refreshAfterTurn();
             return;
         }
         this.turnPending = true;
@@ -112,12 +113,23 @@ export const UI = {
             const payload = await response;
             if (payload?.error) {
                 Game.turn();
+                this.refreshAfterTurn();
             } else {
                 Game.turn({ skipAITurns: true, aiResults: payload.results, aiRolls: payload.rollCalls });
+                this.refreshAfterTurn();
             }
         } finally {
             this.turnPending = false;
         }
+    },
+
+    refreshAfterTurn: function() {
+        this.updateHeader();
+        this.updateSide();
+        this.updateEmpire();
+        this.updateFleets();
+        this.updateResearch();
+        this.updateComms();
     },
 
     saveDesign: function() {

@@ -45,8 +45,8 @@ const createBaseState = () => {
         temp: "0",
         growth: "",
         mining: "",
-        primaryTrait: "adaptive_biology",
-        lesserTraits: ["rapid_breeding"]
+        primaryTrait: "JOAT",
+        lesserTraits: []
     });
     const startingTech = createTechnologyState(technologyFields);
     const humanDesign = createDesign("Probe", "scout", ["ion_drive", "laser_array", "scanner_array"], race, startingTech);
@@ -89,8 +89,8 @@ const createBaseState = () => {
         race,
         diplomacy: { status: { 2: "Neutral" }, lastWarning: 0 },
         players: [
-            { id: 1, type: "human", status: "active", eliminatedAtTurn: null, technology: createTechnologyState(technologyFields) },
-            { id: 2, type: "ai", status: "active", eliminatedAtTurn: null, technology: createTechnologyState(technologyFields) }
+            { id: 1, type: "human", status: "active", eliminatedAtTurn: null, race, technology: createTechnologyState(technologyFields) },
+            { id: 2, type: "ai", status: "active", eliminatedAtTurn: null, race, technology: createTechnologyState(technologyFields) }
         ],
         orders: [],
         combatReports: [],
@@ -154,8 +154,8 @@ const testScoreCalculation = () => {
 const testHeadlessSimulation = () => {
     const state = createBaseState();
     state.players = [
-        { id: 2, type: "ai", status: "active", eliminatedAtTurn: null, technology: createTechnologyState(technologyFields) },
-        { id: 3, type: "ai", status: "active", eliminatedAtTurn: null, technology: createTechnologyState(technologyFields) }
+        { id: 2, type: "ai", status: "active", eliminatedAtTurn: null, race: state.race, technology: createTechnologyState(technologyFields) },
+        { id: 3, type: "ai", status: "active", eliminatedAtTurn: null, race: state.race, technology: createTechnologyState(technologyFields) }
     ];
     state.economy = {
         2: { credits: 800, mineralStock: { i: 1500, b: 1000, g: 1000 }, minerals: 3500 },

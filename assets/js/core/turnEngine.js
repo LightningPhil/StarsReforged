@@ -56,9 +56,11 @@ const cloneFleet = (fleet) => {
         design: fleet.design,
         waypoints: fleet.waypoints,
         cargo: fleet.cargo,
-        shipStacks: fleet.shipStacks
+        shipStacks: fleet.shipStacks,
+        warp: fleet.warp
     });
     clone.fuel = fleet.fuel;
+    clone.warp = fleet.warp;
     clone.dest = fleet.dest ? { ...fleet.dest } : null;
     clone.cargoCapacity = fleet.cargoCapacity ?? clone.cargoCapacity;
     clone.hp = fleet.hp;
@@ -97,6 +99,11 @@ const cloneTechnology = (technology) => {
         fields,
         allocation: technology.allocation ? { ...technology.allocation } : {}
     };
+};
+
+const getRaceForEmpire = (state, empireId) => {
+    const player = state.players?.find(entry => entry.id === empireId);
+    return player?.race || state.race;
 };
 
 const cloneGameState = (state) => ({
@@ -249,14 +256,13 @@ const clampCargoToAvailability = (cargo, available) => ({
     pop: Math.min(cargo.pop || 0, available.pop || 0)
 });
 
-const depositMinerals = (economy, cargo) => {
-    if (!economy) {
+const depositMinerals = (store, cargo) => {
+    if (!store) {
         return;
     }
-    economy.mineralStock.i += cargo.i || 0;
-    economy.mineralStock.b += cargo.b || 0;
-    economy.mineralStock.g += cargo.g || 0;
-    economy.minerals = economy.mineralStock.i + economy.mineralStock.b + economy.mineralStock.g;
+    store.i = (store.i || 0) + (cargo.i || 0);
+    store.b = (store.b || 0) + (cargo.b || 0);
+    store.g = (store.g || 0) + (cargo.g || 0);
 };
 
 const getFleetStackTotals = (state, fleet) => {
@@ -349,7 +355,7 @@ const getPlanetScanRange = (state, empireId) => {
     const elecLevel = techState?.fields?.ELEC?.level ?? 0;
     const base = state.rules?.scanners?.planetBaseRange ?? 100;
     const perLevel = state.rules?.scanners?.planetRangePerLevel ?? 20;
-    const raceModifiers = resolveRaceModifiers(state.race).modifiers;
+    const raceModifiers = resolveRaceModifiers(getRaceForEmpire(state, empireId)).modifiers;
     const range = base + (perLevel * elecLevel);
     return raceModifiers.noAdvancedScanners ? range * 2 : range;
 };
@@ -668,12 +674,29 @@ const resolveFleetScrapOrders = (state) => {
             state.orderErrors.push(`Fleet ${fleet.name} must be at a friendly star to scrap.`);
             return;
         }
+        const raceModifiers = resolveRaceModifiers(getRaceForEmpire(state, fleet.owner)).modifiers;
+        const recoveryRate = Math.min(1, Math.max(0, raceModifiers.scrapRecoveryPlanet ?? 0.5));
+        const stacks = fleet.shipStacks || [];
+        const hullValue = stacks.reduce((total, stack) => {
+            const design = getDesignForStack(state, fleet, stack);
+            const cost = design?.cost || 0;
+            const count = Math.max(0, Math.floor(stack.count || 0));
+            return total + cost * count;
+        }, 0);
+        const recoveredValue = Math.floor(hullValue * recoveryRate);
+        const mineralsRecovered = {
+            i: Math.floor(recoveredValue * DEFAULT_MINERAL_RATIO.i),
+            b: Math.floor(recoveredValue * DEFAULT_MINERAL_RATIO.b),
+            g: Math.floor(recoveredValue * DEFAULT_MINERAL_RATIO.g)
+        };
+        depositMinerals(star.mins, mineralsRecovered);
         remove.add(fleet.id);
         if (state.turnEvents) {
             state.turnEvents.push({
                 type: "FLEET_SCRAPPED",
                 fleetId: fleet.id,
-                starId: star.id
+                starId: star.id,
+                mineralsRecovered
             });
         }
     });
@@ -696,12 +719,15 @@ const resolveMovement = (state) => {
                 return;
             }
             const { totals, totalMass } = updateFleetTotals(state, fleet);
-            const warpSpeed = getWarpSpeed(state, fleet);
+            const waypointSpeed = fleet.waypoints?.[0]?.speed;
+            const resolvedWarp = Number.isFinite(waypointSpeed) ? waypointSpeed : (Number.isFinite(fleet.warp) ? fleet.warp : null);
+            const warpSpeed = resolvedWarp ?? getWarpSpeed(state, fleet);
+            fleet.warp = warpSpeed;
             const speed = getFleetSpeed(state, fleet, warpSpeed);
             if (fleet.fuel <= 0 || totals.fuelPool <= 0) {
                 return;
             }
-            const raceModifiers = resolveRaceModifiers(state.race).modifiers;
+            const raceModifiers = resolveRaceModifiers(getRaceForEmpire(state, fleet.owner)).modifiers;
             if (raceModifiers.engineReliabilityPenalty > 0 && warpSpeed > 6) {
                 const roll = state.rng?.nextInt ? state.rng.nextInt(100) / 100 : Math.random();
                 if (roll < raceModifiers.engineReliabilityPenalty) {
@@ -766,7 +792,7 @@ const resolveMovement = (state) => {
         state.movementPaths.push({ fleetId: fleet.id, start: move.start, end });
         fleet.x = move.x;
         fleet.y = move.y;
-        const raceModifiers = resolveRaceModifiers(state.race).modifiers;
+        const raceModifiers = resolveRaceModifiers(getRaceForEmpire(state, fleet.owner)).modifiers;
         if (fleet.cargo?.pop && move.start) {
             if (raceModifiers.inTransitDeathRate > 0) {
                 const deaths = Math.floor(fleet.cargo.pop * raceModifiers.inTransitDeathRate);
@@ -832,9 +858,9 @@ const resolveWaypointTasks = (state) => {
                             break;
                         }
                         const available = {
-                            i: economy.mineralStock.i || 0,
-                            b: economy.mineralStock.b || 0,
-                            g: economy.mineralStock.g || 0,
+                            i: star.mins?.i || 0,
+                            b: star.mins?.b || 0,
+                            g: star.mins?.g || 0,
                             pop: star.pop || 0
                         };
                         const desired = hasRequest
@@ -850,11 +876,10 @@ const resolveWaypointTasks = (state) => {
                         if (getCargoTotal(toLoad) <= 0) {
                             break;
                         }
-                        economy.mineralStock.i -= toLoad.i;
-                        economy.mineralStock.b -= toLoad.b;
-                        economy.mineralStock.g -= toLoad.g;
-                        economy.minerals = economy.mineralStock.i + economy.mineralStock.b + economy.mineralStock.g;
-                        star.pop -= toLoad.pop;
+                        star.mins.i = Math.max(0, (star.mins?.i || 0) - toLoad.i);
+                        star.mins.b = Math.max(0, (star.mins?.b || 0) - toLoad.b);
+                        star.mins.g = Math.max(0, (star.mins?.g || 0) - toLoad.g);
+                        star.pop = Math.max(0, (star.pop || 0) - toLoad.pop);
                         fleet.cargo = {
                             i: (fleet.cargo.i || 0) + toLoad.i,
                             b: (fleet.cargo.b || 0) + toLoad.b,
@@ -867,7 +892,7 @@ const resolveWaypointTasks = (state) => {
                         if (getCargoTotal(toUnload) <= 0) {
                             break;
                         }
-                        depositMinerals(economy, toUnload);
+                        depositMinerals(star.mins, toUnload);
                         if (toUnload.pop) {
                             star.pop += toUnload.pop;
                         }
@@ -899,7 +924,7 @@ const resolveWaypointTasks = (state) => {
                     star.def.facts = 20;
                     star.mines = 20;
                     star.factories = 20;
-                    depositMinerals(economy, seedMinerals);
+                    depositMinerals(star.mins, seedMinerals);
                     fleet.cargo = { i: 0, b: 0, g: 0, pop: 0 };
                     let consumed = false;
                     const stacks = fleet.shipStacks || [];
@@ -956,7 +981,7 @@ const resolveWaypointTasks = (state) => {
                 break;
             }
             case "LAY_MINES": {
-                const raceModifiers = resolveRaceModifiers(state.race).modifiers;
+                const raceModifiers = resolveRaceModifiers(getRaceForEmpire(state, fleet.owner)).modifiers;
                 if (raceModifiers.noMineLayers) {
                     break;
                 }
@@ -970,7 +995,7 @@ const resolveWaypointTasks = (state) => {
                     }
                     const type = waypoint.data?.type || "standard";
                     const typeRules = getMinefieldTypeRules(state, type);
-                    const raceModifiers = resolveRaceModifiers(state.race).modifiers;
+                    const raceModifiers = resolveRaceModifiers(getRaceForEmpire(state, fleet.owner)).modifiers;
                     const strength = mineUnitsToDeploy * (raceModifiers.minefieldStrengthMultiplier || 1);
                     const radius = Math.sqrt(strength / Math.PI);
                     const existing = state.minefields.find(field => field.ownerEmpireId === fleet.owner
@@ -1024,8 +1049,7 @@ const resolveWaypointTasks = (state) => {
             }
             case "SCRAP": {
                 if (star && star.owner === fleet.owner) {
-                    const economy = state.economy?.[fleet.owner];
-                    const raceModifiers = resolveRaceModifiers(state.race).modifiers;
+                    const raceModifiers = resolveRaceModifiers(getRaceForEmpire(state, fleet.owner)).modifiers;
                     const recoveryRate = Math.min(1, Math.max(0, waypoint.data?.recoveryRate ?? raceModifiers.scrapRecoveryPlanet ?? 0.5));
                     const stacks = fleet.shipStacks || [];
                     const hullValue = stacks.reduce((total, stack) => {
@@ -1041,7 +1065,7 @@ const resolveWaypointTasks = (state) => {
                         g: Math.floor(recoveredValue * DEFAULT_MINERAL_RATIO.g)
                     };
                     const cargo = normalizeCargo(fleet.cargo || {});
-                    depositMinerals(economy, {
+                    depositMinerals(star.mins, {
                         i: mineralsRecovered.i + cargo.i,
                         b: mineralsRecovered.b + cargo.b,
                         g: mineralsRecovered.g + cargo.g
@@ -1068,31 +1092,43 @@ const resolveWaypointTasks = (state) => {
 };
 
 const resolveCombat = (state) => {
-    const fleetsBySystem = new Map();
+    const fleetsByLocation = new Map();
     state.fleets.forEach(fleet => {
-        const star = state.stars.find(st => dist(st, fleet) < 12);
-        if (!star) {
-            return;
+        const locationKey = `${Math.round(fleet.x)}:${Math.round(fleet.y)}`;
+        if (!fleetsByLocation.has(locationKey)) {
+            const star = state.stars.find(st => dist(st, fleet) < 12) || null;
+            fleetsByLocation.set(locationKey, { star, fleets: [] });
         }
-        if (!fleetsBySystem.has(star.id)) {
-            fleetsBySystem.set(star.id, { star, fleets: [] });
-        }
-        fleetsBySystem.get(star.id).fleets.push(fleet);
+        fleetsByLocation.get(locationKey).fleets.push(fleet);
     });
 
-    fleetsBySystem.forEach((group, systemId) => {
-        const owners = new Set(group.fleets.map(fleet => fleet.owner));
-        const hasHostiles = owners.size > 1 || (group.star.owner && !owners.has(group.star.owner));
+    const areEnemies = (ownerId, otherId) => {
+        if (ownerId === otherId) {
+            return false;
+        }
+        const status = state.diplomacy?.status?.[otherId] || state.diplomacy?.status?.[ownerId];
+        return status === "Enemy";
+    };
+
+    fleetsByLocation.forEach((group, systemId) => {
+        const fleets = group.fleets.filter(fleet => getFleetCloakPercent(state, fleet) < 95);
+        if (fleets.length < 2) {
+            return;
+        }
+        const owners = new Set(fleets.map(fleet => fleet.owner));
+        const hasHostiles = Array.from(owners).some(ownerId => (
+            Array.from(owners).some(otherId => areEnemies(ownerId, otherId))
+        )) || (group.star?.owner && !owners.has(group.star.owner));
         if (!hasHostiles) {
             return;
         }
         const result = CombatResolver.resolve(
             systemId,
-            group.fleets,
+            fleets,
             group.star,
             (empireId) => {
                 const techModifiers = getTechnologyModifiers(getTechnologyStateForEmpire(state, empireId));
-                const raceModifiers = resolveRaceModifiers(state.race).modifiers;
+                const raceModifiers = resolveRaceModifiers(getRaceForEmpire(state, empireId)).modifiers;
                 return {
                     ...techModifiers,
                     regeneratingShields: raceModifiers.regeneratingShields
@@ -1100,7 +1136,7 @@ const resolveCombat = (state) => {
             },
             state.rng
         );
-        state.fleets = state.fleets.filter(fleet => !group.fleets.includes(fleet));
+        state.fleets = state.fleets.filter(fleet => !fleets.includes(fleet));
         state.fleets.push(...result.fleets);
         if (result.report) {
             state.combatReports.unshift(result.report);
@@ -1109,12 +1145,12 @@ const resolveCombat = (state) => {
 };
 
 const resolveResearch = (state) => {
-    const raceModifiers = resolveRaceModifiers(state.race).modifiers;
     state.players.forEach(player => {
         const techState = getTechnologyStateForEmpire(state, player.id);
         if (!techState) {
             return;
         }
+        const raceModifiers = resolveRaceModifiers(getRaceForEmpire(state, player.id)).modifiers;
         const totalRP = calculateEmpireResearchPoints(state, player.id, raceModifiers);
         resolveResearchForEmpire(techState, totalRP, state.rules, raceModifiers);
     });
@@ -1130,7 +1166,7 @@ const resolveVisibility = (state) => {
     state.wormholes = state.wormholes || [];
     state.players.forEach(player => {
         const playerId = player.id;
-        const raceModifiers = resolveRaceModifiers(state.race).modifiers;
+        const raceModifiers = resolveRaceModifiers(getRaceForEmpire(state, playerId)).modifiers;
         const packetCloak = raceModifiers.packetPhysics ? 50 : 0;
         const hiddenFieldCloak = 75;
         const scanners = [];
