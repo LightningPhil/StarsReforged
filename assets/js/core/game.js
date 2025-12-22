@@ -86,11 +86,13 @@ const getRaceForEmpire = (game, empireId) => {
 
 const getFleetScanRange = (game, fleet) => {
     const modifiers = getTechnologyModifiers(getTechnologyStateForEmpire(game, fleet.owner));
+    const raceModifiers = resolveRaceModifiers(getRaceForEmpire(game, fleet.owner)).modifiers;
     const scannerStrength = getFleetScannerStrength(game, fleet);
-    return Math.floor(scannerStrength * modifiers.shipRange);
+    const rangeMultiplier = raceModifiers.noAdvancedScanners ? 2 : 1;
+    return Math.floor(scannerStrength * modifiers.shipRange * rangeMultiplier);
 };
 
-const getIntelState = (scanners, target, cloakPercent = 0) => {
+const getIntelState = (scanners, target, cloakPercent = 0, canPenetrate = true) => {
     const effectiveCloak = Math.min(95, Math.max(0, cloakPercent));
     let bestRatio = null;
     scanners.forEach(scanner => {
@@ -108,7 +110,7 @@ const getIntelState = (scanners, target, cloakPercent = 0) => {
         return "none";
     }
     if (bestRatio <= 0.35) {
-        return "penetrated";
+        return canPenetrate ? "penetrated" : "scanned";
     }
     if (bestRatio <= 0.7) {
         return "scanned";
@@ -169,6 +171,15 @@ export const Game = {
             grav: { center: 50, width: 35, immune: false },
             temp: { center: 55, width: 40, immune: false },
             rad: { center: 45, width: 30, immune: false }
+        },
+        economy: {
+            resPerColonist: 1000,
+            resPerFactory: 10,
+            factoryCost: 10,
+            mineCost: 6,
+            maxFactoriesPer10k: 10,
+            maxMinesPer10k: 10,
+            miningRate: 1
         }
     }),
     diplomacy: {
@@ -731,14 +742,16 @@ export const Game = {
                 economy.mineralStock.b += bGain;
                 economy.mineralStock.g += gGain;
 
-                if (star.queue) {
-                    star.queue.done += star.def.facts;
-                    if (star.queue.done >= star.queue.cost) {
-                        if (star.queue.type === 'ship') {
-                            this.buildComplete(star, star.queue.bp, star.queue.owner);
-                        } else if (star.queue.type === 'structure') {
-                            this.completeStructure(star, star.queue);
+                if (Array.isArray(star.queue) && star.queue.length) {
+                    const active = star.queue[0];
+                    active.done += star.def.facts;
+                    if (active.done >= active.cost) {
+                        if (active.type === 'ship') {
+                            this.buildComplete(star, active.bp, active.owner);
+                        } else if (active.type === 'structure') {
+                            this.completeStructure(star, active);
                         }
+                        star.queue.shift();
                     }
                 }
             });
@@ -831,7 +844,11 @@ export const Game = {
         if (ownerId === 1) {
             this.logMsg(`Production of ${blueprint.name} complete at ${star.name}`, "Industry");
         }
-        star.queue = null;
+        if (Array.isArray(star.queue)) {
+            star.queue.shift();
+        } else {
+            star.queue = null;
+        }
     },
 
     completeStructure: function(star, queue) {
@@ -847,7 +864,11 @@ export const Game = {
         if (queue.owner === 1) {
             this.logMsg(`${DB.structures[queue.kind].name} construction complete at ${star.name}.`, "Industry");
         }
-        star.queue = null;
+        if (Array.isArray(star.queue)) {
+            star.queue.shift();
+        } else {
+            star.queue = null;
+        }
     },
 
     saveDesign: function({ name, hullId, componentIds }) {
@@ -1063,7 +1084,7 @@ export const Game = {
             .slice()
             .sort((a, b) => a.id - b.id)
             .forEach(star => {
-            const intelState = getIntelState(this.activeScanners, star);
+            const intelState = getIntelState(this.activeScanners, star, 0, !raceModifiers.noAdvancedScanners);
             const knownEntry = planetKnowledge[star.id];
             star.intelState = intelState;
             if (intelState !== "none") {
@@ -1097,7 +1118,7 @@ export const Game = {
             }
             const cloak = getFleetCloakPercent(this, fleet);
             fleet.cloak = cloak;
-            fleet.intelState = getIntelState(this.activeScanners, fleet, cloak);
+            fleet.intelState = getIntelState(this.activeScanners, fleet, cloak, !raceModifiers.noAdvancedScanners);
         });
 
         if (!this.minefieldIntel[1]) {
@@ -1108,7 +1129,7 @@ export const Game = {
             if (minefield.visibility === "all" || minefield.ownerEmpireId === 1) {
                 intelState = "penetrated";
             } else {
-                intelState = getIntelState(this.activeScanners, minefield.center, hiddenFieldCloak);
+                intelState = getIntelState(this.activeScanners, minefield.center, hiddenFieldCloak, !raceModifiers.noAdvancedScanners);
             }
             if (intelState === "none") {
                 return;
@@ -1134,7 +1155,7 @@ export const Game = {
             this.wormholeIntel[1] = [];
         }
         this.wormholes.forEach(wormhole => {
-            const intelState = getIntelState(this.activeScanners, wormhole.entry || wormhole, hiddenFieldCloak);
+            const intelState = getIntelState(this.activeScanners, wormhole.entry || wormhole, hiddenFieldCloak, !raceModifiers.noAdvancedScanners);
             if (intelState === "none") {
                 return;
             }
@@ -1159,6 +1180,7 @@ export const Game = {
 
     buildAIVisibleState: function(playerId) {
         const scanners = [];
+        const raceModifiers = resolveRaceModifiers(getRaceForEmpire(this, playerId)).modifiers;
         this.stars.forEach(star => {
             if (star.owner === playerId) {
                 scanners.push({ x: star.x, y: star.y, r: 260, owner: playerId });
@@ -1175,7 +1197,7 @@ export const Game = {
             .forEach(scan => scanners.push(scan));
 
         const visibleStars = this.stars
-            .filter(star => star.owner === playerId || getIntelState(scanners, star) !== "none")
+            .filter(star => star.owner === playerId || getIntelState(scanners, star, 0, !raceModifiers.noAdvancedScanners) !== "none")
             .map(star => ({
                 id: star.id,
                 x: star.x,
@@ -1186,7 +1208,7 @@ export const Game = {
                 mines: star.mines,
                 factories: star.factories,
                 def: { ...star.def },
-                queue: star.queue ? { ...star.queue } : null,
+                queue: Array.isArray(star.queue) ? star.queue.map(item => ({ ...item })) : (star.queue ? [{ ...star.queue }] : []),
                 habitability: star.habitability,
                 environment: { ...star.environment },
                 hasStargate: star.hasStargate,
@@ -1201,7 +1223,7 @@ export const Game = {
                     return true;
                 }
                 const cloak = getFleetCloakPercent(this, fleet);
-                return getIntelState(scanners, fleet, cloak) !== "none";
+                return getIntelState(scanners, fleet, cloak, !raceModifiers.noAdvancedScanners) !== "none";
             })
             .map(fleet => ({
                 id: fleet.id,
@@ -1220,7 +1242,7 @@ export const Game = {
             if (minefield.visibility === "all" || minefield.ownerEmpireId === playerId) {
                 intelState = "penetrated";
             } else {
-                intelState = getIntelState(scanners, minefield.center, hiddenFieldCloak);
+                intelState = getIntelState(scanners, minefield.center, hiddenFieldCloak, !raceModifiers.noAdvancedScanners);
             }
             if (intelState === "none") {
                 return acc;

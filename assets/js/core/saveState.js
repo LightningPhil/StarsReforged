@@ -20,7 +20,7 @@ const serializeStar = (star) => ({
     factories: star.factories ?? null,
     mines: star.mines ?? null,
     def: { ...star.def },
-    queue: star.queue ? { ...star.queue } : null,
+    queue: Array.isArray(star.queue) ? star.queue.map(item => ({ ...item })) : (star.queue ? [{ ...star.queue }] : []),
     autoBuild: star.autoBuild ? { ...star.autoBuild } : null,
     terraforming: star.terraforming ? { ...star.terraforming } : null,
     visible: star.visible,

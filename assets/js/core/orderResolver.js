@@ -117,20 +117,13 @@ const resolveBuildShips = (state, order) => {
         logOrderError(state, `Unknown ship design for BUILD_SHIPS.`);
         return;
     }
-    if (star.queue) {
-        logOrderError(state, `Star ${star.id} already has a build queue.`);
-        return;
-    }
     const techState = getTechnologyStateForEmpire(state, order.issuerId);
     const modifiers = getTechnologyModifiers(techState);
     const adjustedCost = Math.ceil(blueprint.cost * modifiers.shipCost);
-    const economy = state.economy?.[order.issuerId];
-    if (!economy || economy.credits < adjustedCost) {
-        logOrderError(state, `Insufficient credits to build ${blueprint.name}.`);
-        return;
+    if (!Array.isArray(star.queue)) {
+        star.queue = star.queue ? [star.queue] : [];
     }
-    economy.credits -= adjustedCost;
-    star.queue = {
+    star.queue.push({
         type: "ship",
         bp: blueprint,
         cost: adjustedCost,
@@ -141,7 +134,7 @@ const resolveBuildShips = (state, order) => {
             b: Math.ceil(adjustedCost * DEFAULT_MINERAL_RATIO.b),
             g: Math.ceil(adjustedCost * DEFAULT_MINERAL_RATIO.g)
         }
-    };
+    });
 };
 
 const resolveBuildStructure = (state, order) => {
@@ -152,27 +145,36 @@ const resolveBuildStructure = (state, order) => {
         logOrderError(state, `Invalid BUILD_STRUCTURE order from ${order.issuerId}.`);
         return;
     }
+    const raceModifiers = resolveRaceModifiers(getRaceForEmpire(state, order.issuerId)).modifiers;
+    if (kind === "factory" && raceModifiers.noFactories) {
+        logOrderError(state, `Factories are unavailable for this race.`);
+        return;
+    }
+    if (kind === "mine" && raceModifiers.noMines) {
+        logOrderError(state, `Mines are unavailable for this race.`);
+        return;
+    }
     const structure = DB.structures?.[kind];
     if (!structure) {
         logOrderError(state, `Unknown structure for BUILD_STRUCTURE.`);
-        return;
-    }
-    if (star.queue) {
-        logOrderError(state, `Star ${star.id} already has a build queue.`);
         return;
     }
     if (kind === "base" && star.def.base) {
         logOrderError(state, `Star ${star.id} already has a starbase.`);
         return;
     }
-    const economy = state.economy?.[order.issuerId];
-    const cost = structure.cost * count;
-    if (!economy || economy.credits < cost) {
-        logOrderError(state, `Insufficient credits to build ${structure.name}.`);
-        return;
+    if (!Array.isArray(star.queue)) {
+        star.queue = star.queue ? [star.queue] : [];
     }
-    economy.credits -= cost;
-    star.queue = {
+    const race = getRaceForEmpire(state, order.issuerId);
+    const economyRules = race?.economy || {};
+    const baseCost = kind === "mine"
+        ? (economyRules.mineCost ?? structure.cost)
+        : kind === "factory"
+            ? (economyRules.factoryCost ?? structure.cost)
+            : structure.cost;
+    const cost = baseCost * count;
+    star.queue.push({
         type: "structure",
         kind,
         count,
@@ -184,7 +186,7 @@ const resolveBuildStructure = (state, order) => {
             b: Math.ceil(cost * DEFAULT_MINERAL_RATIO.b),
             g: Math.ceil(cost * DEFAULT_MINERAL_RATIO.g)
         }
-    };
+    });
 };
 
 const resolveScanSector = (state, order) => {

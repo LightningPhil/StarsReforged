@@ -39,7 +39,8 @@ const TRAIT_CATALOG = {
             shipCostMultiplier: 0.75,
             startingTechLevels: { WEAP: 5, PROP: 1, ENER: 1 },
             noMineLayers: true,
-            restrictedStructures: ["defense_only"]
+            restrictedStructures: ["defense_only"],
+            groundCombatBonus: 0.25
         }
     },
     CA: {
@@ -140,6 +141,7 @@ const TRAIT_CATALOG = {
             researchCostMultiplier: 1.05,
             noFactories: true,
             noPlanetaryDefenses: true,
+            noMines: true,
             inTransitDeathRate: 0.03
         }
     },
@@ -282,6 +284,25 @@ const TRAIT_CATALOG = {
             habitabilityWidthBonus: 0.3,
             terraformingRateMultiplier: 1.7
         }
+    },
+    ARM: {
+        id: "ARM",
+        name: "Advanced Remote Mining",
+        type: "lesser",
+        cost: 2,
+        modifiers: {
+            miningRateMultiplier: 1.15
+        }
+    },
+    OBM: {
+        id: "OBM",
+        name: "Only Basic Remote Mining",
+        type: "lesser",
+        cost: 2,
+        modifiers: {
+            miningRateMultiplier: 0.9,
+            maxPopulationMultiplier: 1.1
+        }
     }
 };
 
@@ -325,6 +346,7 @@ const buildBaseModifiers = () => ({
     armorStrengthMultiplier: 1,
     shieldStrengthMultiplier: 1,
     defenseCostMultiplier: 1,
+    groundCombatBonus: 0,
     inTransitDeathRate: 0,
     inTransitGrowth: 0,
     massDriverEfficiency: 1,
@@ -334,6 +356,9 @@ const buildBaseModifiers = () => ({
     restrictedStructures: [],
     orbitalTerraforming: false,
     alternateReality: false,
+    noFactories: false,
+    noPlanetaryDefenses: false,
+    noMines: false,
     packetPhysics: false
 });
 
@@ -478,6 +503,15 @@ const applyTraitModifiers = (modifiers, trait) => {
     if (typeof effects.noMineLayers === "boolean") {
         modifiers.noMineLayers = modifiers.noMineLayers || effects.noMineLayers;
     }
+    if (typeof effects.noFactories === "boolean") {
+        modifiers.noFactories = modifiers.noFactories || effects.noFactories;
+    }
+    if (typeof effects.noPlanetaryDefenses === "boolean") {
+        modifiers.noPlanetaryDefenses = modifiers.noPlanetaryDefenses || effects.noPlanetaryDefenses;
+    }
+    if (typeof effects.noMines === "boolean") {
+        modifiers.noMines = modifiers.noMines || effects.noMines;
+    }
     if (typeof effects.noAdvancedScanners === "boolean") {
         modifiers.noAdvancedScanners = modifiers.noAdvancedScanners || effects.noAdvancedScanners;
     }
@@ -495,6 +529,9 @@ const applyTraitModifiers = (modifiers, trait) => {
     }
     if (Number.isFinite(effects.defenseCostMultiplier)) {
         modifiers.defenseCostMultiplier *= effects.defenseCostMultiplier;
+    }
+    if (Number.isFinite(effects.groundCombatBonus)) {
+        modifiers.groundCombatBonus = Math.max(modifiers.groundCombatBonus, effects.groundCombatBonus);
     }
     if (Number.isFinite(effects.inTransitDeathRate)) {
         modifiers.inTransitDeathRate = Math.max(modifiers.inTransitDeathRate, effects.inTransitDeathRate);

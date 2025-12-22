@@ -769,18 +769,22 @@ export const UI = {
             h += `<div class="stat-row"><span>Factories</span> <span class="val">${star.def.facts}</span></div>`;
             h += `<div class="stat-row"><span>Starbase</span> <span class="val">${star.def.base ? star.def.base.name : 'None'}</span></div>`;
 
-            if (star.queue) {
-                    const label = star.queue.type === 'ship'
-                        ? star.queue.bp.name
-                        : `${DB.structures[star.queue.kind].name} x${star.queue.count}`;
-                    h += `<div style="color:var(--c-warn); font-size:12px; margin-top:5px;">Building: ${label}<br>${Math.floor(star.queue.done)} / ${star.queue.cost}</div>`;
+            if (Array.isArray(star.queue) && star.queue.length) {
+                    const current = star.queue[0];
+                    const label = current.type === 'ship'
+                        ? current.bp.name
+                        : `${DB.structures[current.kind].name} x${current.count}`;
+                    h += `<div style="color:var(--c-warn); font-size:12px; margin-top:5px;">Building: ${label}<br>${Math.floor(current.done)} / ${current.cost}</div>`;
+                    if (star.queue.length > 1) {
+                        h += `<div style="font-size:11px; color:#667;">Queue: ${star.queue.length - 1} item(s) pending</div>`;
+                    }
                 } else {
                     h += `<div style="font-size:12px; margin-top:6px;">Queue a blueprint from the Design screen.</div>`;
                 }
             h += `</div>`;
 
             h += `<div class="panel-block"><h3>Planetary Build</h3>`;
-            if (!star.queue) {
+            if (!Array.isArray(star.queue) || !star.queue.length) {
                 h += `<button class="action" onclick="UI.queueStructure(Game.stars[${star.id}], 'mine', 10)">Add 10 Mines (${DB.structures.mine.cost * 10}cr)</button>`;
                 h += `<button class="action" onclick="UI.queueStructure(Game.stars[${star.id}], 'factory', 10)">Add 10 Factories (${DB.structures.factory.cost * 10}cr)</button>`;
                 if (!star.def.base) {

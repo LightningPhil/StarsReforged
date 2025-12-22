@@ -72,6 +72,7 @@ const buildStackState = (fleet, stack, modifiers, stackIndex) => {
             tactic: battlePlan.tactic ?? battlePlan.tactics ?? "balanced"
         },
         regeneratingShields: Boolean(modifiers?.regeneratingShields),
+        groundCombatBonus: modifiers?.groundCombatBonus ?? 0,
         destroyed: false,
         originalCount: Math.max(0, stack.count ?? 0)
     };
@@ -143,6 +144,36 @@ const applyDamageToStack = (stack, damage, sapper = 0) => {
         stack.shieldDamage = maxShield;
     }
     return { kills, remaining: 0 };
+};
+
+const applyHullDamageToStack = (stack, damage) => {
+    if (stack.count <= 0 || damage <= 0) {
+        return { kills: 0 };
+    }
+    stack.hullDamage += damage;
+    const totals = getRemainingTotals(stack);
+    const remainingHull = Math.max(0, totals.totalHull - stack.hullDamage);
+    const newCount = remainingHull <= 0 ? 0 : Math.ceil(remainingHull / totals.hullPerShip);
+    const kills = stack.count - newCount;
+    stack.count = newCount;
+    if (stack.count <= 0) {
+        stack.destroyed = true;
+        stack.shieldDamage = 0;
+    }
+    return { kills };
+};
+
+const applyShieldDamageOnly = (stack, damage) => {
+    if (stack.count <= 0 || damage <= 0) {
+        return { kills: 0 };
+    }
+    const totals = getRemainingTotals(stack);
+    if (totals.remainingShields <= 0) {
+        return { kills: 0 };
+    }
+    const absorbed = Math.min(totals.remainingShields, damage);
+    stack.shieldDamage += absorbed;
+    return { kills: 0 };
 };
 
 const getPairKey = (a, b) => (a.id < b.id ? `${a.id}|${b.id}` : `${b.id}|${a.id}`);
@@ -366,8 +397,18 @@ const resolveFiringPhase = (combatants, ranges, frame, rng) => {
                             const accuracy = getTorpedoAccuracy(attacker, entry, range);
                             const roll = rng?.nextInt ? rng.nextInt(1000) / 1000 : Math.random();
                             if (roll > accuracy) {
+                                applyShieldDamageOnly(entry, Math.floor(perShot / 8));
                                 continue;
                             }
+                            const hullDamage = Math.floor(perShot / 2);
+                            const shieldDamage = perShot - hullDamage;
+                            const hullOutcome = applyHullDamageToStack(entry, hullDamage);
+                            const outcome = applyDamageToStack(entry, shieldDamage, 0);
+                            totalKills += (hullOutcome.kills || 0) + outcome.kills;
+                            if (entry.destroyed || entry.count <= 0) {
+                                break;
+                            }
+                            continue;
                         }
                         const outcome = applyDamageToStack(entry, perShot, attacker.sapper);
                         totalKills += outcome.kills;
@@ -442,10 +483,11 @@ const getBombingProfile = (stack) => {
     return { isSmart, isNeutron };
 };
 
-const resolveBombardment = (star, attackers, frames) => {
+const resolveBombardment = (star, attackers, frames, getModifiersForEmpire = null) => {
     if (!star || !star.owner || star.def?.base) {
         return null;
     }
+    const defenseDisabled = getModifiersForEmpire ? Boolean(getModifiersForEmpire(star.owner)?.noPlanetaryDefenses) : false;
     const totals = attackers.reduce((sum, stack) => {
         const profile = getBombingProfile(stack);
         const bombing = (stack.bombing || 0) * stack.count;
@@ -464,7 +506,7 @@ const resolveBombardment = (star, attackers, frames) => {
     }
     const smartDefenseDamage = Math.floor(totals.smart * 1.2);
     const standardDefenseDamage = Math.floor(totals.standard * 0.4);
-    const defenseDamage = smartDefenseDamage + standardDefenseDamage;
+    const defenseDamage = defenseDisabled ? 0 : (smartDefenseDamage + standardDefenseDamage);
     const defensePool = (star.def.mines || 0) + (star.def.facts || 0);
     const actualDefenseLoss = Math.min(defensePool, Math.floor(defenseDamage));
     const mineLoss = Math.min(star.def.mines || 0, Math.floor(actualDefenseLoss * 0.6));
@@ -504,7 +546,7 @@ const resolveBombardment = (star, attackers, frames) => {
     };
 };
 
-const resolveInvasion = (star, attackers, frames) => {
+const resolveInvasion = (star, attackers, frames, getModifiersForEmpire = null) => {
     if (!star || !star.owner || star.def?.base || star.pop <= 0) {
         return null;
     }
@@ -514,13 +556,16 @@ const resolveInvasion = (star, attackers, frames) => {
     }
     const invasionForce = troopStacks.reduce((sum, stack) => {
         const fleet = stack.fleetRef;
-        return sum + (fleet?.cargo?.pop || 0);
+        const bonus = stack.groundCombatBonus || 0;
+        return sum + Math.floor((fleet?.cargo?.pop || 0) * (1 + bonus));
     }, 0);
     if (invasionForce <= 0) {
         return null;
     }
-    const defenseBonus = (star.def.mines || 0) + (star.def.facts || 0);
-    const defenderForce = star.pop + Math.floor(defenseBonus * 0.5);
+    const defenseDisabled = getModifiersForEmpire ? Boolean(getModifiersForEmpire(star.owner)?.noPlanetaryDefenses) : false;
+    const defenseBonus = defenseDisabled ? 0 : ((star.def.mines || 0) + (star.def.facts || 0));
+    const defenderBonus = getModifiersForEmpire ? (getModifiersForEmpire(star.owner)?.groundCombatBonus || 0) : 0;
+    const defenderForce = Math.floor(star.pop * (1 + defenderBonus)) + Math.floor(defenseBonus * 0.5);
     if (invasionForce <= defenderForce) {
         if (frames) {
             frames.push({
@@ -733,8 +778,8 @@ export const CombatResolver = {
             star.def.base = null;
         }
 
-        const bombingOutcome = resolveBombardment(star, orbitingAttackers, frames);
-        const invasionOutcome = resolveInvasion(star, orbitingAttackers, frames);
+        const bombingOutcome = resolveBombardment(star, orbitingAttackers, frames, getModifiersForEmpire);
+        const invasionOutcome = resolveInvasion(star, orbitingAttackers, frames, getModifiersForEmpire);
 
         if (winner && star && star.owner && String(star.owner) !== String(winner)) {
             star.owner = parseInt(winner, 10);
