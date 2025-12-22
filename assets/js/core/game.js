@@ -486,6 +486,10 @@ export const Game = {
             this.logMsg("Victory declared. No further turns possible.", "System", "high");
             return;
         }
+        const options = arguments.length ? arguments[0] : {};
+        const skipAITurns = options?.skipAITurns;
+        const aiResults = options?.aiResults || [];
+        const aiRolls = Array.isArray(options?.aiRolls) ? options.aiRolls : [];
         const minefieldBefore = new Map(this.minefields.map(field => ([field.id, field.strength])));
         const fleetNames = new Map(this.fleets.map(fleet => ([fleet.id, fleet.name])));
         const nextTurn = this.turnCount + 1;
@@ -494,7 +498,29 @@ export const Game = {
         this.rng = new PCG32(seeded, 54n);
         this.startTurnLog();
         this.turnEvents = [];
-        this.processAITurns();
+        if (skipAITurns) {
+            aiRolls.forEach(max => this.roll(max));
+            aiResults.forEach(result => {
+                this.turnEvents.push({ type: "AI_TURN_STARTED", playerId: result.playerId, turn: this.turnCount + 1 });
+                result.orders.forEach(order => {
+                    this.queueOrder(order);
+                    this.turnEvents.push({
+                        type: "AI_ACTION_TAKEN",
+                        playerId: result.playerId,
+                        orderType: order.type,
+                        turn: this.turnCount + 1
+                    });
+                });
+                this.turnEvents.push({
+                    type: "AI_TURN_ENDED",
+                    playerId: result.playerId,
+                    turn: this.turnCount + 1,
+                    intent: result.intent
+                });
+            });
+        } else {
+            this.processAITurns();
+        }
         this.orders = this.collectOrders();
         const stargateOrders = this.orders.filter(order => order.type === ORDER_TYPES.STARGATE_JUMP && order.issuerId === 1);
         const sweepOrders = this.orders.filter(order => order.type === ORDER_TYPES.SWEEP_MINES && order.issuerId === 1);
@@ -1134,6 +1160,112 @@ export const Game = {
                 this.wormholeIntel[1].push(payload);
             }
         });
+    },
+
+    buildAIVisibleState: function(playerId) {
+        const scanners = [];
+        this.stars.forEach(star => {
+            if (star.owner === playerId) {
+                scanners.push({ x: star.x, y: star.y, r: 260, owner: playerId });
+            }
+        });
+        this.fleets.forEach(fleet => {
+            if (fleet.owner === playerId) {
+                const range = getFleetScanRange(this, fleet);
+                scanners.push({ x: fleet.x, y: fleet.y, r: range, owner: playerId });
+            }
+        });
+        (this.sectorScans || [])
+            .filter(scan => scan.owner === playerId)
+            .forEach(scan => scanners.push(scan));
+
+        const visibleStars = this.stars
+            .filter(star => star.owner === playerId || getIntelState(scanners, star) !== "none")
+            .map(star => ({
+                id: star.id,
+                x: star.x,
+                y: star.y,
+                name: star.name,
+                owner: star.owner,
+                pop: star.pop,
+                mines: star.mines,
+                factories: star.factories,
+                def: { ...star.def },
+                queue: star.queue ? { ...star.queue } : null,
+                habitability: star.habitability,
+                environment: { ...star.environment },
+                hasStargate: star.hasStargate,
+                stargateMassLimit: star.stargateMassLimit,
+                stargateRange: star.stargateRange,
+                stargateTechLevel: star.stargateTechLevel
+            }));
+
+        const visibleFleets = this.fleets
+            .filter(fleet => {
+                if (fleet.owner === playerId) {
+                    return true;
+                }
+                const cloak = getFleetCloakPercent(this, fleet);
+                return getIntelState(scanners, fleet, cloak) !== "none";
+            })
+            .map(fleet => ({
+                id: fleet.id,
+                owner: fleet.owner,
+                x: fleet.x,
+                y: fleet.y,
+                dest: fleet.dest ? { ...fleet.dest } : null,
+                design: fleet.design ? { ...fleet.design, finalStats: { ...fleet.design.finalStats } } : null,
+                mineSweepingStrength: fleet.mineSweepingStrength,
+                mass: fleet.mass
+            }));
+
+        const hiddenFieldCloak = 75;
+        const visibleMinefields = this.minefields.reduce((acc, minefield) => {
+            let intelState = "none";
+            if (minefield.visibility === "all" || minefield.ownerEmpireId === playerId) {
+                intelState = "penetrated";
+            } else {
+                intelState = getIntelState(scanners, minefield.center, hiddenFieldCloak);
+            }
+            if (intelState === "none") {
+                return acc;
+            }
+            acc.push({
+                id: minefield.id,
+                center: { ...minefield.center },
+                radius: minefield.radius,
+                ownerEmpireId: intelState === "penetrated" ? minefield.ownerEmpireId : null,
+                intelState,
+                lastSeenTurn: this.turnCount
+            });
+            return acc;
+        }, []);
+
+        const economyEntry = this.economy?.[playerId];
+        const visibleEconomy = economyEntry
+            ? {
+                credits: economyEntry.credits,
+                mineralStock: { ...economyEntry.mineralStock },
+                minerals: economyEntry.minerals
+            }
+            : null;
+
+        const playerEntry = this.players.find(player => player.id === playerId);
+        return {
+            turnCount: this.turnCount,
+            rules: this.rules,
+            race: this.race,
+            stars: visibleStars,
+            fleets: visibleFleets,
+            minefields: visibleMinefields,
+            shipDesigns: { [playerId]: (this.shipDesigns?.[playerId] || []).map(design => ({
+                ...design,
+                finalStats: design.finalStats ? { ...design.finalStats } : null,
+                flags: Array.isArray(design.flags) ? [...design.flags] : []
+            })) },
+            economy: { [playerId]: visibleEconomy },
+            players: playerEntry ? [{ id: playerEntry.id, technology: playerEntry.technology }] : []
+        };
     },
 
     queueOrder: function(order) {
