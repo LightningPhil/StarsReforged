@@ -197,7 +197,7 @@ const getWarpSpeed = (state, fleet) => {
 
 const getFleetSpeed = (state, fleet, warpSpeed = null) => {
     const resolvedWarpSpeed = warpSpeed ?? getWarpSpeed(state, fleet);
-    return Math.max(10, Math.floor((resolvedWarpSpeed ** 2) * 10));
+    return Math.max(1, Math.floor(resolvedWarpSpeed ** 2));
 };
 
 const getDesignForStack = (state, fleet, stack) => {
@@ -343,7 +343,7 @@ const calculateFuelUsage = (totalMass, warpSpeed, distance) => {
     }
     const massFactor = Math.max(1, Math.ceil(totalMass / 100));
     const fuelPerLy = Math.max(1, Math.ceil((warpSpeed * massFactor) / 2));
-    return Math.ceil((distance / 10) * fuelPerLy);
+    return Math.ceil(distance * fuelPerLy);
 };
 
 const applyRamscoop = (fleet, distance, fuelUse, hasRamscoop = false) => {
@@ -624,18 +624,51 @@ const resolveMovement = (state) => {
             const warpSpeed = getWarpSpeed(state, fleet);
             const speed = getFleetSpeed(state, fleet, warpSpeed);
             if (fleet.fuel <= 0 || totals.fuelPool <= 0) {
-                fleet.dest = null;
-                state.orderErrors.push(`${fleet.name} lacked fuel and could not move.`);
                 return;
             }
-            const move = stepToward(fleet, fleet.dest.x, fleet.dest.y, speed);
-            const distance = Math.hypot(move.x - fleet.x, move.y - fleet.y);
-            const fuelUse = applyRamscoop(
+            const distanceToDest = Math.hypot(fleet.dest.x - fleet.x, fleet.dest.y - fleet.y);
+            const plannedDistance = Math.min(distanceToDest, speed);
+            let fuelUse = applyRamscoop(
                 fleet,
-                distance,
-                calculateFuelUsage(totalMass, warpSpeed, distance),
+                plannedDistance,
+                calculateFuelUsage(totalMass, warpSpeed, plannedDistance),
                 totals.hasRamscoop
             );
+            let adjustedDistance = plannedDistance;
+            if (fuelUse > fleet.fuel && fuelUse > 0) {
+                adjustedDistance = Math.floor(plannedDistance * (fleet.fuel / fuelUse));
+                if (adjustedDistance <= 0) {
+                    return;
+                }
+                fuelUse = applyRamscoop(
+                    fleet,
+                    adjustedDistance,
+                    calculateFuelUsage(totalMass, warpSpeed, adjustedDistance),
+                    totals.hasRamscoop
+                );
+                while (fuelUse > fleet.fuel && adjustedDistance > 0) {
+                    adjustedDistance -= 1;
+                    fuelUse = applyRamscoop(
+                        fleet,
+                        adjustedDistance,
+                        calculateFuelUsage(totalMass, warpSpeed, adjustedDistance),
+                        totals.hasRamscoop
+                    );
+                }
+                if (adjustedDistance <= 0) {
+                    return;
+                }
+            }
+            const move = stepToward(fleet, fleet.dest.x, fleet.dest.y, adjustedDistance);
+            const distance = Math.hypot(move.x - fleet.x, move.y - fleet.y);
+            if (distance !== adjustedDistance) {
+                fuelUse = applyRamscoop(
+                    fleet,
+                    distance,
+                    calculateFuelUsage(totalMass, warpSpeed, distance),
+                    totals.hasRamscoop
+                );
+            }
             nextPositions.set(fleet.id, { ...move, fuelUse, start: { x: fleet.x, y: fleet.y } });
         });
 
@@ -663,7 +696,7 @@ const resolveMovement = (state) => {
             } else {
                 fleet.dest = null;
             }
-            fleet.fuel = Math.max(0, fleet.fuel - move.fuelUse * 2);
+            fleet.fuel = Math.max(0, fleet.fuel - move.fuelUse);
         } else {
             fleet.fuel = Math.max(0, fleet.fuel - move.fuelUse);
         }

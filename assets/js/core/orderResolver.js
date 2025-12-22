@@ -12,6 +12,10 @@ import { enforceAllocationRules, resolveRaceModifiers } from "./raceTraits.js";
 const getFleetById = (state, fleetId) => state.fleets.find(fleet => fleet.id === fleetId);
 const getStarById = (state, starId) => state.stars.find(star => star.id === starId);
 const DEFAULT_MINERAL_RATIO = { i: 0.4, b: 0.3, g: 0.3 };
+const getFleetCargoMass = (fleet) => {
+    const cargo = fleet.cargo || {};
+    return (cargo.i || 0) + (cargo.b || 0) + (cargo.g || 0) + (cargo.pop || 0);
+};
 
 const logOrderError = (state, message) => {
     if (!state.orderErrors) {
@@ -320,8 +324,18 @@ const resolveStargateJump = (state, order) => {
     const distance = Math.hypot(dx, dy);
     const maxRange = Math.min(source.stargateRange || 0, destination.stargateRange || 0)
         * (raceModifiers.stargateRangeMultiplier || 1);
-    if (distance > maxRange) {
+    if (maxRange <= 0) {
         logOrderError(state, `Destination out of range for fleet ${fleet.id}.`);
+        return;
+    }
+    if (distance > maxRange * 5) {
+        logOrderError(state, `Destination out of range for fleet ${fleet.id}.`);
+        return;
+    }
+    const isInterstellarTraveler = state.race?.primaryTrait === "IT";
+    const cargoMass = getFleetCargoMass(fleet);
+    if (!isInterstellarTraveler && cargoMass > 0) {
+        logOrderError(state, `Fleet ${fleet.id} cannot gate cargo without Interstellar Traveler.`);
         return;
     }
     const massLimitMultiplier = raceModifiers.stargateMassMultiplier || 1;
@@ -331,6 +345,12 @@ const resolveStargateJump = (state, order) => {
     }
     if (!Number.isFinite(destination.stargateMassLimit) || destination.stargateMassLimit * massLimitMultiplier <= 0) {
         logOrderError(state, `Destination stargate mass limit unavailable for fleet ${fleet.id}.`);
+        return;
+    }
+    const totalMass = (fleet.mass || 0) + cargoMass;
+    const maxMass = Math.min(source.stargateMassLimit || 0, destination.stargateMassLimit || 0) * massLimitMultiplier;
+    if (totalMass > maxMass * 5) {
+        logOrderError(state, `Fleet ${fleet.id} exceeds stargate mass limits.`);
         return;
     }
     if (Math.hypot(fleet.x - source.x, fleet.y - source.y) > 12) {
