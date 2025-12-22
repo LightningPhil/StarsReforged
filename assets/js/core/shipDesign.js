@@ -114,7 +114,6 @@ export const calculateDesignStats = (hull, components, techState = null, raceMod
 
     const mineCapacity = sumStat(components, "mineCapacity");
     const mineLayingCapacity = sumStat(components, "mineLayingCapacity") || mineCapacity;
-    const mineSweepingStrength = sumStat(components, "mineSweep");
     const signature = (hull.signature || Math.ceil(hull.baseMass / 20)) + Math.ceil(mass / 120);
     const scanner = resolveScannerStrength(hull, components) * (raceModifiers?.shipScannerMultiplier || 1);
     const camo = Math.max(0, Math.floor((hull.camo || 0) + sumStat(components, "camo")));
@@ -309,3 +308,4 @@ export const buildShipDesign = ({ name, hull, componentIds = [], designId, race 
     });
     return { design, errors: [], stats: finalStats };
 };
+    const mineSweepingStrength = Math.max(0, Math.floor(beamDamage * Math.pow(beamRange, 2)));

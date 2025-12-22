@@ -45,7 +45,13 @@ export const resolveDefeats = (state) => {
 
 const getMinefieldTypeRules = (state, type) => {
     const types = state.rules?.minefields?.types || {};
-    return types[type] || types.standard || { sweepResistance: 1, damageMultiplier: 1, decayRate: 0.05 };
+    return types[type] || types.standard || {
+        sweepResistance: 1,
+        damageMultiplier: 1,
+        decayRate: 0.05,
+        safeSpeed: 6,
+        riskFactor: 0.05
+    };
 };
 
 const getLineIntersectionLength = (start, end, center, radius) => {
@@ -120,6 +126,36 @@ const getFleetCargoMass = (fleet) => {
     return (cargo.i || 0) + (cargo.b || 0) + (cargo.g || 0) + (cargo.pop || 0);
 };
 
+const getFleetWarpSpeed = (fleet) => {
+    if (Array.isArray(fleet.shipStacks) && fleet.shipStacks.length) {
+        const speeds = fleet.shipStacks
+            .map(stack => stack.stats?.speed)
+            .filter(speed => Number.isFinite(speed));
+        if (speeds.length) {
+            return Math.max(1, Math.floor(Math.min(...speeds)));
+        }
+    }
+    return Math.max(1, Math.floor(fleet.design?.speed || 1));
+};
+
+const getFleetBeamSweepingStrength = (fleet) => {
+    const stacks = Array.isArray(fleet.shipStacks) && fleet.shipStacks.length
+        ? fleet.shipStacks
+        : [{ count: 1, stats: { beamDamage: fleet.design?.beamDamage, beamRange: fleet.design?.beamRange } }];
+    return stacks.reduce((total, stack) => {
+        const count = Math.max(0, Math.floor(stack.count || 0));
+        if (count <= 0) {
+            return total;
+        }
+        const beamDamage = Math.max(0, stack.stats?.beamDamage ?? 0);
+        const beamRange = Math.max(0, stack.stats?.beamRange ?? (beamDamage > 0 ? 1 : 0));
+        if (beamDamage <= 0 || beamRange <= 0) {
+            return total;
+        }
+        return total + (count * beamDamage * (beamRange ** 2));
+    }, 0);
+};
+
 export const resolveMinefieldLaying = (state) => {
     const orders = state.minefieldLayingOrders || [];
     if (!orders.length) {
@@ -179,7 +215,11 @@ export const resolveMinefieldSweeping = (state) => {
         if (dist(fleet, minefield.center) > minefield.radius) {
             return;
         }
-        const swept = (fleet.mineSweepingStrength * (raceModifiers.minefieldSweepMultiplier || 1))
+        const sweepingStrength = getFleetBeamSweepingStrength(fleet);
+        if (sweepingStrength <= 0) {
+            return;
+        }
+        const swept = (sweepingStrength * (raceModifiers.minefieldSweepMultiplier || 1))
             / (minefield.sweepResistance || 1);
         minefield.strength = Math.max(0, minefield.strength - swept);
         minefield.radius = minefield.strength > 0 ? Math.sqrt(minefield.strength / Math.PI) : 0;
@@ -195,11 +235,13 @@ export const resolveMinefieldTransitDamage = (state) => {
     }
     const destroyed = new Set();
     const raceModifiers = resolveRaceModifiers(state.race).modifiers;
+    const isSpaceDemolition = state.race?.primaryTrait === "SD";
     movementPaths.forEach(path => {
         const fleet = state.fleets.find(item => item.id === path.fleetId);
         if (!fleet) {
             return;
         }
+        const warpSpeed = getFleetWarpSpeed(fleet);
         state.minefields.forEach(minefield => {
             if (minefield.ownerEmpireId === fleet.owner) {
                 return;
@@ -209,6 +251,16 @@ export const resolveMinefieldTransitDamage = (state) => {
                 return;
             }
             const typeRules = getMinefieldTypeRules(state, minefield.type);
+            const safeSpeed = Math.max(0, typeRules.safeSpeed ?? 0);
+            if (warpSpeed <= safeSpeed) {
+                return;
+            }
+            const riskFactor = Math.max(0, typeRules.riskFactor ?? 0);
+            const hitChance = Math.min(1, Math.max(0, (warpSpeed - safeSpeed) * riskFactor));
+            const roll = state.rng.nextInt(1000) / 1000;
+            if (roll >= hitChance) {
+                return;
+            }
             const damage = Math.ceil(minefield.density * lengthInside
                 * (typeRules.damageMultiplier || 1)
                 * (raceModifiers.minefieldDamageMultiplier || 1));
@@ -217,6 +269,10 @@ export const resolveMinefieldTransitDamage = (state) => {
             }
             const destroyedShip = applyDamageToFleet(fleet, damage);
             rememberMinefield(state, fleet.owner, minefield, false);
+            if (isSpaceDemolition) {
+                minefield.strength = Math.max(0, minefield.strength * 0.75);
+                minefield.radius = minefield.strength > 0 ? Math.sqrt(minefield.strength / Math.PI) : 0;
+            }
             if (state.turnEvents) {
                 state.turnEvents.push({
                     type: "MINEFIELD_HIT",
@@ -237,11 +293,15 @@ export const resolveMinefieldTransitDamage = (state) => {
 
 export const resolveMinefieldDecay = (state) => {
     const raceModifiers = resolveRaceModifiers(state.race).modifiers;
+    const isSpaceDemolition = state.race?.primaryTrait === "SD";
     state.minefields = state.minefields
         .map(field => {
             const typeRules = getMinefieldTypeRules(state, field.type);
-            const decayRate = field.decayRate ?? typeRules.decayRate ?? 0;
-            field.strength *= (1 - (decayRate * (raceModifiers.minefieldDecayMultiplier || 1)));
+            const decayRate = isSpaceDemolition
+                ? (field.decayRate ?? typeRules.decayRate ?? 0)
+                : (0.01 + (0.04 * state.stars.filter(star => dist(star, field.center) <= field.radius).length));
+            const adjustedDecay = Math.min(1, decayRate * (raceModifiers.minefieldDecayMultiplier || 1));
+            field.strength *= (1 - adjustedDecay);
             field.radius = field.strength > 0 ? Math.sqrt(field.strength / Math.PI) : 0;
             return field;
         })

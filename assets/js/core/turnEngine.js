@@ -1247,12 +1247,12 @@ export const TurnEngine = {
         resolveFleetSplitOrders(state);
         resolveFleetTransferOrders(state);
         resolveFleetScrapOrders(state);
+        resolveMinefieldSweeping(state);
         resolveMovement(state);
         resolveWaypointTasks(state);
         resolveWormholes(state);
         resolveMassDriverPackets(state);
         resolveMinefieldLaying(state);
-        resolveMinefieldSweeping(state);
         resolveMinefieldTransitDamage(state);
         resolveMinefieldDecay(state);
         resolveStargateJumps(state);
