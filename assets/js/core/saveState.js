@@ -55,6 +55,8 @@ const serializeFleet = (fleet) => ({
     mineSweepingStrength: fleet.mineSweepingStrength,
     mineHitpoints: fleet.mineHitpoints,
     mass: fleet.mass,
+    cargoMass: fleet.cargoMass,
+    fuelPool: fleet.fuelPool,
     colonize: fleet.colonize || false
 });
 

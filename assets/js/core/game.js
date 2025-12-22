@@ -53,23 +53,36 @@ const getFleetScannerStrength = (game, fleet) => {
     return sum > 0 ? Math.pow(sum, 0.25) : 0;
 };
 
-const getFleetCloakPercent = (game, fleet) => {
+const getFleetCargoMass = (fleet) => {
+    const cargo = fleet.cargo || {};
+    return (cargo.i || 0) + (cargo.b || 0) + (cargo.g || 0) + (cargo.pop || 0);
+};
+
+const getFleetStackTotals = (game, fleet) => {
     const stacks = fleet.shipStacks || [];
     if (!stacks.length) {
-        return fleet.design?.cloak ?? fleet.design?.finalStats?.cloak ?? 0;
+        const mass = fleet.design?.finalStats?.mass ?? fleet.design?.mass ?? 0;
+        const cloak = fleet.design?.finalStats?.cloak ?? fleet.design?.cloak ?? 0;
+        return { shipMass: mass, cloakPoints: cloak * mass };
     }
-    const totals = stacks.reduce((acc, stack) => {
+    return stacks.reduce((totals, stack) => {
         const design = getDesignForStack(game, fleet, stack);
+        const mass = design?.finalStats?.mass ?? design?.mass ?? 0;
         const cloak = design?.finalStats?.cloak ?? design?.cloak ?? 0;
         const count = stack?.count || 1;
-        acc.cloak += cloak * count;
-        acc.count += count;
-        return acc;
-    }, { cloak: 0, count: 0 });
-    if (!totals.count) {
+        totals.shipMass += mass * count;
+        totals.cloakPoints += cloak * mass * count;
+        return totals;
+    }, { shipMass: 0, cloakPoints: 0 });
+};
+
+const getFleetCloakPercent = (game, fleet) => {
+    const totals = getFleetStackTotals(game, fleet);
+    const totalMass = totals.shipMass + getFleetCargoMass(fleet);
+    if (!totalMass) {
         return 0;
     }
-    return Math.round(totals.cloak / totals.count);
+    return Math.round(totals.cloakPoints / totalMass);
 };
 
 const getFleetScanRange = (game, fleet) => {
