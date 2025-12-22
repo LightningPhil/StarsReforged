@@ -216,6 +216,48 @@ const getFleetCargoMass = (fleet) => {
     return (cargo.i || 0) + (cargo.b || 0) + (cargo.g || 0) + (cargo.pop || 0);
 };
 
+const DEFAULT_MINERAL_RATIO = { i: 0.4, b: 0.3, g: 0.3 };
+
+const normalizeCargo = (cargo = {}) => ({
+    i: Math.max(0, Math.floor(cargo.i || 0)),
+    b: Math.max(0, Math.floor(cargo.b || 0)),
+    g: Math.max(0, Math.floor(cargo.g || 0)),
+    pop: Math.max(0, Math.floor(cargo.pop || 0))
+});
+
+const getCargoTotal = (cargo) => (cargo.i || 0) + (cargo.b || 0) + (cargo.g || 0) + (cargo.pop || 0);
+
+const clampCargoToCapacity = (cargo, capacity) => {
+    const total = getCargoTotal(cargo);
+    if (total <= capacity || total === 0) {
+        return { ...cargo };
+    }
+    const scale = capacity / total;
+    return {
+        i: Math.floor(cargo.i * scale),
+        b: Math.floor(cargo.b * scale),
+        g: Math.floor(cargo.g * scale),
+        pop: Math.floor(cargo.pop * scale)
+    };
+};
+
+const clampCargoToAvailability = (cargo, available) => ({
+    i: Math.min(cargo.i || 0, available.i || 0),
+    b: Math.min(cargo.b || 0, available.b || 0),
+    g: Math.min(cargo.g || 0, available.g || 0),
+    pop: Math.min(cargo.pop || 0, available.pop || 0)
+});
+
+const depositMinerals = (economy, cargo) => {
+    if (!economy) {
+        return;
+    }
+    economy.mineralStock.i += cargo.i || 0;
+    economy.mineralStock.b += cargo.b || 0;
+    economy.mineralStock.g += cargo.g || 0;
+    economy.minerals = economy.mineralStock.i + economy.mineralStock.b + economy.mineralStock.g;
+};
+
 const getFleetStackTotals = (state, fleet) => {
     const stacks = Array.isArray(fleet.shipStacks) && fleet.shipStacks.length
         ? fleet.shipStacks
@@ -703,6 +745,11 @@ const resolveMovement = (state) => {
     });
 };
 
+const getMinefieldTypeRules = (state, type) => {
+    const types = state.rules?.minefields?.types || {};
+    return types[type] || types.standard || { sweepResistance: 1, decayRate: 0.05 };
+};
+
 const resolveWaypointTasks = (state) => {
     const queue = state.waypointTaskQueue || [];
     if (!queue.length) {
@@ -720,32 +767,138 @@ const resolveWaypointTasks = (state) => {
             case "TRANSPORT": {
                 if (star && star.owner === fleet.owner) {
                     const economy = state.economy?.[fleet.owner];
-                    if (economy && fleet.cargo) {
-                        economy.mineralStock.i += fleet.cargo.i || 0;
-                        economy.mineralStock.b += fleet.cargo.b || 0;
-                        economy.mineralStock.g += fleet.cargo.g || 0;
-                        economy.minerals = economy.mineralStock.i + economy.mineralStock.b + economy.mineralStock.g;
-                        if (fleet.cargo.pop) {
-                            star.pop += fleet.cargo.pop;
-                        }
-                        fleet.cargo = { i: 0, b: 0, g: 0, pop: 0 };
+                    if (!economy || !fleet.cargo) {
+                        break;
                     }
+                    const mode = waypoint.data?.mode === "LOAD" ? "LOAD" : "UNLOAD";
+                    const cargoRequest = normalizeCargo(waypoint.data?.cargo || {});
+                    const hasRequest = getCargoTotal(cargoRequest) > 0;
+                    if (mode === "LOAD") {
+                        const capacityRemaining = Math.max(0, (fleet.cargoCapacity || 0) - getFleetCargoMass(fleet));
+                        if (capacityRemaining <= 0) {
+                            break;
+                        }
+                        const available = {
+                            i: economy.mineralStock.i || 0,
+                            b: economy.mineralStock.b || 0,
+                            g: economy.mineralStock.g || 0,
+                            pop: star.pop || 0
+                        };
+                        const desired = hasRequest
+                            ? cargoRequest
+                            : {
+                                i: Math.floor(capacityRemaining * DEFAULT_MINERAL_RATIO.i),
+                                b: Math.floor(capacityRemaining * DEFAULT_MINERAL_RATIO.b),
+                                g: Math.floor(capacityRemaining * DEFAULT_MINERAL_RATIO.g),
+                                pop: 0
+                            };
+                        let toLoad = clampCargoToAvailability(desired, available);
+                        toLoad = clampCargoToCapacity(toLoad, capacityRemaining);
+                        if (getCargoTotal(toLoad) <= 0) {
+                            break;
+                        }
+                        economy.mineralStock.i -= toLoad.i;
+                        economy.mineralStock.b -= toLoad.b;
+                        economy.mineralStock.g -= toLoad.g;
+                        economy.minerals = economy.mineralStock.i + economy.mineralStock.b + economy.mineralStock.g;
+                        star.pop -= toLoad.pop;
+                        fleet.cargo = {
+                            i: (fleet.cargo.i || 0) + toLoad.i,
+                            b: (fleet.cargo.b || 0) + toLoad.b,
+                            g: (fleet.cargo.g || 0) + toLoad.g,
+                            pop: (fleet.cargo.pop || 0) + toLoad.pop
+                        };
+                    } else {
+                        const desired = hasRequest ? cargoRequest : normalizeCargo(fleet.cargo);
+                        const toUnload = clampCargoToAvailability(desired, fleet.cargo);
+                        if (getCargoTotal(toUnload) <= 0) {
+                            break;
+                        }
+                        depositMinerals(economy, toUnload);
+                        if (toUnload.pop) {
+                            star.pop += toUnload.pop;
+                        }
+                        fleet.cargo = {
+                            i: (fleet.cargo.i || 0) - toUnload.i,
+                            b: (fleet.cargo.b || 0) - toUnload.b,
+                            g: (fleet.cargo.g || 0) - toUnload.g,
+                            pop: (fleet.cargo.pop || 0) - toUnload.pop
+                        };
+                    }
+                    updateFleetTotals(state, fleet);
                 }
                 break;
             }
             case "COLONIZE": {
                 if (star && !star.owner && fleet.design?.flags?.includes("colonize")) {
-                    fleet.colonize = true;
+                    const economy = state.economy?.[fleet.owner];
+                    const seedPopulation = Math.max(0, Math.floor(waypoint.data?.seedPopulation ?? 2500));
+                    const mineralSeed = normalizeCargo(waypoint.data?.minerals || {});
+                    const fleetCargo = normalizeCargo(fleet.cargo || {});
+                    const seedMinerals = {
+                        i: mineralSeed.i + fleetCargo.i,
+                        b: mineralSeed.b + fleetCargo.b,
+                        g: mineralSeed.g + fleetCargo.g
+                    };
+                    star.owner = fleet.owner;
+                    star.pop = seedPopulation + (fleetCargo.pop || 0);
+                    star.def.mines = 20;
+                    star.def.facts = 20;
+                    star.mines = 20;
+                    star.factories = 20;
+                    depositMinerals(economy, seedMinerals);
+                    fleet.cargo = { i: 0, b: 0, g: 0, pop: 0 };
+                    let consumed = false;
+                    const stacks = fleet.shipStacks || [];
+                    const colonizerStack = stacks.find(stack => {
+                        const design = getDesignForStack(state, fleet, stack);
+                        return design?.flags?.includes("colonize");
+                    });
+                    if (colonizerStack) {
+                        const removed = removeStackShips(fleet, colonizerStack.designId, 1);
+                        consumed = removed > 0;
+                        normalizeFleetStacks(fleet);
+                    }
+                    if (!consumed) {
+                        removeFleetIds.add(fleet.id);
+                    } else if (!fleet.shipStacks?.length) {
+                        removeFleetIds.add(fleet.id);
+                    } else {
+                        updateFleetTotals(state, fleet);
+                    }
+                    if (state.turnEvents) {
+                        state.turnEvents.push({
+                            type: "COLONIZED",
+                            fleetId: fleet.id,
+                            starId: star.id
+                        });
+                    }
                 }
                 break;
             }
             case "REMOTE_MINE": {
-                if (star && state.turnEvents) {
-                    state.turnEvents.push({
-                        type: "REMOTE_MINE",
-                        fleetId: fleet.id,
-                        starId: star.id
-                    });
+                if (star) {
+                    const payload = normalizeCargo(waypoint.data?.minerals || {});
+                    const capacityRemaining = Math.max(0, (fleet.cargoCapacity || 0) - getFleetCargoMass(fleet));
+                    const toLoad = clampCargoToCapacity(payload, capacityRemaining);
+                    if (getCargoTotal(toLoad) <= 0) {
+                        break;
+                    }
+                    fleet.cargo = {
+                        i: (fleet.cargo?.i || 0) + toLoad.i,
+                        b: (fleet.cargo?.b || 0) + toLoad.b,
+                        g: (fleet.cargo?.g || 0) + toLoad.g,
+                        pop: fleet.cargo?.pop || 0
+                    };
+                    updateFleetTotals(state, fleet);
+                    if (state.turnEvents) {
+                        state.turnEvents.push({
+                            type: "REMOTE_MINE",
+                            fleetId: fleet.id,
+                            starId: star.id,
+                            minerals: { i: toLoad.i, b: toLoad.b, g: toLoad.g }
+                        });
+                    }
                 }
                 break;
             }
@@ -755,19 +908,54 @@ const resolveWaypointTasks = (state) => {
                         fleet.mineUnits,
                         Math.max(1, Math.floor(waypoint.data?.mineUnitsToDeploy || fleet.mineLayingCapacity))
                     );
-                    if (!state.minefieldLayingOrders) {
-                        state.minefieldLayingOrders = [];
+                    if (mineUnitsToDeploy <= 0) {
+                        break;
                     }
-                    state.minefieldLayingOrders.push({
-                        fleetId: fleet.id,
-                        mineUnitsToDeploy,
-                        type: waypoint.data?.type || "standard"
-                    });
+                    const type = waypoint.data?.type || "standard";
+                    const typeRules = getMinefieldTypeRules(state, type);
+                    const raceModifiers = resolveRaceModifiers(state.race).modifiers;
+                    const strength = mineUnitsToDeploy * (raceModifiers.minefieldStrengthMultiplier || 1);
+                    const radius = Math.sqrt(strength / Math.PI);
+                    const existing = state.minefields.find(field => field.ownerEmpireId === fleet.owner
+                        && field.center.x === fleet.x
+                        && field.center.y === fleet.y);
+                    if (existing) {
+                        existing.strength += strength;
+                        existing.radius = Math.sqrt(existing.strength / Math.PI);
+                    } else {
+                        const minefieldId = state.minefields.reduce((max, field) => Math.max(max, field.id), 0) + 1;
+                        state.minefields.push(new Minefield({
+                            id: minefieldId,
+                            ownerEmpireId: fleet.owner,
+                            center: { x: fleet.x, y: fleet.y },
+                            radius,
+                            strength,
+                            type,
+                            turnCreated: state.turnCount,
+                            sweepResistance: typeRules.sweepResistance * (raceModifiers.minefieldSweepResistanceMultiplier || 1),
+                            decayRate: typeRules.decayRate * (raceModifiers.minefieldDecayMultiplier || 1),
+                            visibility: "owner"
+                        }));
+                    }
+                    fleet.mineUnits -= mineUnitsToDeploy;
                 }
                 break;
             }
             case "PATROL": {
-                if (state.turnEvents) {
+                const radius = Math.max(0, Math.floor(waypoint.data?.radius || 60));
+                const target = state.fleets.find(candidate => candidate.owner !== fleet.owner
+                    && dist(candidate, fleet) <= radius);
+                if (target) {
+                    fleet.dest = { x: target.x, y: target.y };
+                    fleet.waypoints = [{ x: target.x, y: target.y, task: null, data: null }];
+                    if (state.turnEvents) {
+                        state.turnEvents.push({
+                            type: "PATROL_INTERCEPT",
+                            fleetId: fleet.id,
+                            targetFleetId: target.id
+                        });
+                    }
+                } else if (state.turnEvents) {
                     state.turnEvents.push({
                         type: "PATROL_COMPLETE",
                         fleetId: fleet.id,
@@ -779,12 +967,34 @@ const resolveWaypointTasks = (state) => {
             }
             case "SCRAP": {
                 if (star && star.owner === fleet.owner) {
+                    const economy = state.economy?.[fleet.owner];
+                    const recoveryRate = Math.min(1, Math.max(0, waypoint.data?.recoveryRate ?? 0.5));
+                    const stacks = fleet.shipStacks || [];
+                    const hullValue = stacks.reduce((total, stack) => {
+                        const design = getDesignForStack(state, fleet, stack);
+                        const cost = design?.cost || 0;
+                        const count = Math.max(0, Math.floor(stack.count || 0));
+                        return total + cost * count;
+                    }, 0);
+                    const recoveredValue = Math.floor(hullValue * recoveryRate);
+                    const mineralsRecovered = {
+                        i: Math.floor(recoveredValue * DEFAULT_MINERAL_RATIO.i),
+                        b: Math.floor(recoveredValue * DEFAULT_MINERAL_RATIO.b),
+                        g: Math.floor(recoveredValue * DEFAULT_MINERAL_RATIO.g)
+                    };
+                    const cargo = normalizeCargo(fleet.cargo || {});
+                    depositMinerals(economy, {
+                        i: mineralsRecovered.i + cargo.i,
+                        b: mineralsRecovered.b + cargo.b,
+                        g: mineralsRecovered.g + cargo.g
+                    });
                     removeFleetIds.add(fleet.id);
                     if (state.turnEvents) {
                         state.turnEvents.push({
                             type: "FLEET_SCRAPPED",
                             fleetId: fleet.id,
-                            starId: star.id
+                            starId: star.id,
+                            mineralsRecovered
                         });
                     }
                 }
